@@ -1,2 +1,6 @@
-"test
+"""test
+"""
+
 def test()
+
+return True
