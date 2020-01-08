@@ -1,1 +1,1 @@
-#DeepNet for counting mosquito eggs
+DeepNet for counting mosquito eggs and returning amount of dessication.
