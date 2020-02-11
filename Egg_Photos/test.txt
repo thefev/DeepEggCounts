@@ -1,3 +1,2 @@
-
-../Egg_photos/DSC_2394.JPG
-../Egg_photos/DSC_2395.JPG
+Egg_photos/DSC_2394.JPG
+Egg_photos/DSC_2395.JPG
