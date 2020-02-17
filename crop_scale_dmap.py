@@ -6,6 +6,8 @@ Created on Thu Feb 13 11:11:52 2020
 
 Prompts user for image, then asks user to crop the section in which eggs exist.
 Scales the cropped image to 480p format for further processing.
+
+Future modifications: added further resolutions for selection, e.g. 360p, 720p, 1080p, etc.
 """
 import sys
 import cv2

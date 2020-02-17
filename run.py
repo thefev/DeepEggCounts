@@ -19,6 +19,4 @@ img = cv2.imread(train_list[0])
 
 train_X = np.zeros(train_size, img.shape)
 
-#for i in range(train_size):
-    
 
