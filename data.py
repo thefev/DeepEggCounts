@@ -4,10 +4,11 @@ Created on Thu Feb 13 11:11:52 2020
 
 @author: Kevin
 
-Prompts user for image, then asks user to crop the section in which eggs exist.
-Scales the cropped image to 480p format for further processing.
+Various methods used for image pre- and post-processing.
 
-Future modifications: added further resolutions for selection, e.g. 360p, 720p, 1080p, etc.
+Potential future work: alter generate_density_map to deal with dessicated eggs - read in class type, draw healthy eggs
+    on first channel and dessicated on second channel. Will require higher resolution image (current default of 480p
+    is insufficient to distinguish between the two cases), modifying and re-training EggCountNet for two output classes.
 """
 import sys
 import cv2
@@ -168,7 +169,7 @@ def generate_density_map(img_path, coor_path):
     img = cv2.imread(img_path)
     coor = np.loadtxt(coor_path)
     coor = coor.astype(int)  # round to int
-    # initialise density map of size image
+    # initialise density map of size image - only 1 channel
     density_map = np.zeros((img.shape[0], img.shape[1]), np.uint8)
 
     # applying heat of 100 at location of eggs
@@ -246,12 +247,62 @@ def image_crop_and_scale(resolution="480p"):
     Prompts user to crop image in the section in which eggs exist. Unless specified, crops to 640x480p.
 
     Args:
-        image:
         resolution:
 
     Returns:
 
     """
+    cropping = False
+    cropped = False
+    x_start, y_start, x_end, y_end = 0, 0, 0, 0
+    res = {"240p": (320, 240),
+           "360p": (480, 360),
+           "480p": (640, 480),
+           "720p": (960, 720),
+           "1080p": (1440, 1080)}
+    res_tuple = res[resolution]
+    aspect_ratio = res_tuple[0] / res_tuple[1]
+
+    img_path = get_image_path()
+    image = cv2.imread(img_path)
+
+    # retrieving current display size to ensure it fits the screen during cropping and by inputted resolution for
+    # image processing - format: (width, height)
+    p_image = (image.shape[1], image.shape[0])
+    p_current_display = (GetSystemMetrics(0), GetSystemMetrics(1))
+
+    # ensuring linear rescaling that fits user's window
+    rf_crop_display = min(p_current_display[1] / image.shape[0], p_current_display[0] / image.shape[1])
+    p_crop_display = (int(rf_crop_display * image.shape[1]), int(rf_crop_display * image.shape[0]))
+    image_rescaled, rf_rescaled = image_rescale(image, p_crop_display)  # rescale to fit screen
+
+    cv2.namedWindow("image")
+    cv2.setMouseCallback("image", mouse_crop)
+    while not cropped:
+        image_copy = image_rescaled.copy()
+        if not cropping:
+            cv2.imshow("image", image_rescaled)
+        elif cropping:
+            cv2.rectangle(image_copy, (x_start, y_start), (x_end, y_end), (255, 0, 0), 2)
+            cv2.imshow("image", image_copy)
+        cv2.waitKey(1)
+    # close all open windows
+    cv2.destroyAllWindows()
+
+    # Grabs coordinates of cropped image corners, creates cropped image, and creates shifts coordinates to cropped image
+    # space.
+    cropped_corners = [(x_start, y_start), (x_end, y_end)]
+    cropped_corners = cropped_box_shift(cropped_corners, aspect_ratio)
+    [(x_start, y_start), (x_end, y_end)] = cropped_corners
+    image_cropped = image_rescaled[cropped_corners[0][1]:cropped_corners[1][1],
+                    cropped_corners[0][0]:cropped_corners[1][0]]
+
+    # Final downscaling to 480p format of both cropped image and coordinates for U-Net to process more easily.
+    image_final_res, rf_final_res = image_rescale(image_cropped, res_tuple)
+
+    save_path = img_path.rstrip("jpgJPG").rstrip('.')
+    img_path_save = save_path + "_" + resolution + ".JPG"
+    cv2.imwrite(img_path_save, image_final_res)
 
 
 def image_crop_scale_dmap(resolution="480p"):
@@ -266,14 +317,13 @@ def image_crop_scale_dmap(resolution="480p"):
     cropping = False
     cropped = False
     x_start, y_start, x_end, y_end = 0, 0, 0, 0
-    final_res = "480p"
     res = {"240p": (320, 240),
            "360p": (480, 360),
            "480p": (640, 480),
            "720p": (960, 720),
            "1080p": (1440, 1080)}
-    resolution = res[final_res]
-    aspect_ratio = resolution[0] / resolution[1]
+    res_tuple = res[resolution]
+    aspect_ratio = res_tuple[0] / res_tuple[1]
 
     img_path = get_image_path()
     data_path = img_path.rstrip("jpgJPG").rstrip('.') + ".txt"
@@ -322,15 +372,15 @@ def image_crop_scale_dmap(resolution="480p"):
     assert max(coor_cropped[:, 1]) <= abs(y_end - y_start), "max(y) out of image"
 
     # Final downscaling to 480p format of both cropped image and coordinates for U-Net to process more easily.
-    image_final_res, rf_final_res = image_rescale(image_cropped, resolution)
+    image_final_res, rf_final_res = image_rescale(image_cropped, res_tuple)
     coor_final_res = coor_rescale(coor_cropped, rf_final_res)
 
     # Visual check that coordinates are at correct locations
     draw_points_on_image(image_final_res.copy(), coor_final_res)
 
     save_path = img_path.rstrip("jpgJPG").rstrip('.')
-    img_path_save = save_path + "_" + final_res + ".JPG"
-    coor_path_save = save_path + "_" + final_res + ".txt"
+    img_path_save = save_path + "_" + resolution + ".JPG"
+    coor_path_save = save_path + "_" + resolution + ".txt"
     cv2.imwrite(img_path_save, image_final_res)
     np.savetxt(coor_path_save, coor_final_res)
     generate_density_map(img_path_save, coor_path_save)
@@ -362,28 +412,27 @@ def load_data():
 
     """
     files = ["Egg_photos / DSC_2378.JPG",
-                "Egg_photos / DSC_2379.JPG",
-                "Egg_photos / DSC_2380.JPG",
-                "Egg_photos / DSC_2381.JPG",
-                "Egg_photos / DSC_2382.JPG",
-                "Egg_photos / DSC_2391.JPG",
-                "Egg_photos / DSC_2392.JPG",
-                "Egg_photos / DSC_2393.JPG",
-                "Egg_photos / DSC_2394.JPG",
-                "Egg_photos / DSC_2395.JPG"]
-    X_size = cv2.imread(files[0].rstrip("jpgJPG").rstrip(".").replace(" ", "") + "_480p.JPG").shape
-    Y_size = cv2.imread(files[0].rstrip("jpgJPG").rstrip(".").replace(" ", "") + "_480p_dmap.JPG").shape
-    X = np.zeros((10, X_size[0], X_size[1], X_size[2]))
-    Y = np.zeros((10, Y_size[0], Y_size[1], Y_size[2]))
+             "Egg_photos / DSC_2379.JPG",
+             "Egg_photos / DSC_2380.JPG",
+             "Egg_photos / DSC_2381.JPG",
+             "Egg_photos / DSC_2382.JPG",
+             "Egg_photos / DSC_2391.JPG",
+             "Egg_photos / DSC_2392.JPG",
+             "Egg_photos / DSC_2393.JPG",
+             "Egg_photos / DSC_2394.JPG",
+             "Egg_photos / DSC_2395.JPG"]
+    x_size = cv2.imread(files[0].rstrip("jpgJPG").rstrip(".").replace(" ", "") + "_480p.JPG").shape
+    y_size = cv2.imread(files[0].rstrip("jpgJPG").rstrip(".").replace(" ", "") + "_480p_dmap.JPG").shape
+    x = np.zeros((10, x_size[0], x_size[1], x_size[2]))
+    y = np.zeros((10, y_size[0], y_size[1], y_size[2]))
     for i in range(len(files)):
-        X[i] = cv2.imread(files[i].rstrip("jpgJPG").rstrip(".").replace(" ", "") + "_480p.JPG")
-        Y[i] = cv2.imread(files[i].rstrip("jpgJPG").rstrip(".").replace(" ", "") + "_480p_dmap.JPG")
+        x[i] = cv2.imread(files[i].rstrip("jpgJPG").rstrip(".").replace(" ", "") + "_480p.JPG")
+        y[i] = cv2.imread(files[i].rstrip("jpgJPG").rstrip(".").replace(" ", "") + "_480p_dmap.JPG")
 
-    X_train = X[:8]
-    X_val = X[8:]
-    Y_train = Y[:8]
-    Y_val = Y[8:]
-    return (X_train, Y_train), (X_val, Y_val)
+    x_train = x[:8]
+    x_val = x[8:]
+    y_train = y[:8]
+    y_val = y[8:]
+    return (x_train, y_train), (x_val, y_val)
 
 # ---------------------------------------------------------------------------------------------------------------------
-
