@@ -18,6 +18,10 @@ import tkinter as tk
 from tkinter import filedialog
 from scipy.ndimage import gaussian_filter
 
+cropping = False
+cropped = False
+x_start, y_start, x_end, y_end = 0, 0, 0, 0
+
 
 def mouse_crop(event, x, y, flags, param):
     """
@@ -244,17 +248,20 @@ def cropped_box_shift(corners, desired_aspect_ratio):
 
 def image_crop_and_scale(resolution="480p"):
     """
-    Prompts user to crop image in the section in which eggs exist. Unless specified, crops to 640x480p.
+    Prompts user to crop image in the section in which eggs exist. Unless specified, crops to 640x480p. Saves cropped
+    image as .JPG
 
     Args:
-        resolution:
+        resolution:     desired output image's resolution
 
     Returns:
-
+        None
     """
+    global cropping, cropped, x_start, y_start, x_end, y_end
     cropping = False
     cropped = False
     x_start, y_start, x_end, y_end = 0, 0, 0, 0
+
     res = {"240p": (320, 240),
            "360p": (480, 360),
            "480p": (640, 480),
@@ -268,7 +275,6 @@ def image_crop_and_scale(resolution="480p"):
 
     # retrieving current display size to ensure it fits the screen during cropping and by inputted resolution for
     # image processing - format: (width, height)
-    p_image = (image.shape[1], image.shape[0])
     p_current_display = (GetSystemMetrics(0), GetSystemMetrics(1))
 
     # ensuring linear rescaling that fits user's window
@@ -293,9 +299,8 @@ def image_crop_and_scale(resolution="480p"):
     # space.
     cropped_corners = [(x_start, y_start), (x_end, y_end)]
     cropped_corners = cropped_box_shift(cropped_corners, aspect_ratio)
-    [(x_start, y_start), (x_end, y_end)] = cropped_corners
     image_cropped = image_rescaled[cropped_corners[0][1]:cropped_corners[1][1],
-                    cropped_corners[0][0]:cropped_corners[1][0]]
+                                   cropped_corners[0][0]:cropped_corners[1][0]]
 
     # Final downscaling to 480p format of both cropped image and coordinates for U-Net to process more easily.
     image_final_res, rf_final_res = image_rescale(image_cropped, res_tuple)
@@ -314,9 +319,9 @@ def image_crop_scale_dmap(resolution="480p"):
     Returns:
 
     """
-    cropping = False
-    cropped = False
-    x_start, y_start, x_end, y_end = 0, 0, 0, 0
+    # cropping = False
+    # cropped = False
+    # x_start, y_start, x_end, y_end = 0, 0, 0, 0
     res = {"240p": (320, 240),
            "360p": (480, 360),
            "480p": (640, 480),
@@ -334,7 +339,6 @@ def image_crop_scale_dmap(resolution="480p"):
 
     # defining dimension in pixels based on current display size during cropping
     #   and 480p for image processing - format: (width, height)
-    p_image = (image.shape[1], image.shape[0])
     p_current_display = (GetSystemMetrics(0), GetSystemMetrics(1))
 
     # ensuring linear rescaling that fits user's window
@@ -404,35 +408,51 @@ def get_image_path():
     return image_path
 
 
-def load_data():
+def load_train_data():
     """
-    Loads in images and density map for training and validation
+    Load training images (X_train) and normalises them, as well as their density map (y_train)
 
-    Returns:    train and val X, Y set
+    Returns:
+        X_train (list of images):   training images in 480p format
+        Y_train (list of images):   density maps of training images
 
     """
-    files = ["Egg_photos / DSC_2378.JPG",
-             "Egg_photos / DSC_2379.JPG",
-             "Egg_photos / DSC_2380.JPG",
-             "Egg_photos / DSC_2381.JPG",
-             "Egg_photos / DSC_2382.JPG",
-             "Egg_photos / DSC_2391.JPG",
-             "Egg_photos / DSC_2392.JPG",
-             "Egg_photos / DSC_2393.JPG",
-             "Egg_photos / DSC_2394.JPG",
-             "Egg_photos / DSC_2395.JPG"]
-    x_size = cv2.imread(files[0].rstrip("jpgJPG").rstrip(".").replace(" ", "") + "_480p.JPG").shape
-    y_size = cv2.imread(files[0].rstrip("jpgJPG").rstrip(".").replace(" ", "") + "_480p_dmap.JPG").shape
-    x = np.zeros((10, x_size[0], x_size[1], x_size[2]))
-    y = np.zeros((10, y_size[0], y_size[1], y_size[2]))
+    files = ["Egg_photos / DSC_2378.JPG", "Egg_photos / DSC_2379.JPG",
+             "Egg_photos / DSC_2380.JPG", "Egg_photos / DSC_2381.JPG",
+             "Egg_photos / DSC_2382.JPG", "Egg_photos / DSC_2391.JPG",
+             "Egg_photos / DSC_2392.JPG", "Egg_photos / DSC_2393.JPG",
+             "Egg_photos / DSC_2394.JPG", "Egg_photos / DSC_2395.JPG"]
+    X_size = cv2.imread(files[0].rstrip("jpgJPG").rstrip(".").replace(" ", "") + "_480p.JPG").shape
+    Y_size = cv2.imread(files[0].rstrip("jpgJPG").rstrip(".").replace(" ", "") + "_480p_dmap.JPG").shape
+    X_train = np.zeros((10, X_size[0], X_size[1], X_size[2]))
+    Y_train = np.zeros((10, Y_size[0], Y_size[1], Y_size[2]))
     for i in range(len(files)):
-        x[i] = cv2.imread(files[i].rstrip("jpgJPG").rstrip(".").replace(" ", "") + "_480p.JPG")
-        y[i] = cv2.imread(files[i].rstrip("jpgJPG").rstrip(".").replace(" ", "") + "_480p_dmap.JPG")
+        X_train[i] = cv2.imread(files[i].rstrip("jpgJPG").rstrip(".").replace(" ", "") + "_480p.JPG")
+        Y_train[i] = cv2.imread(files[i].rstrip("jpgJPG").rstrip(".").replace(" ", "") + "_480p_dmap.JPG")
 
-    x_train = x[:8]
-    x_val = x[8:]
-    y_train = y[:8]
-    y_val = y[8:]
-    return (x_train, y_train), (x_val, y_val)
+    X_train = X_train.astype('float32')
+    Y_train = Y_train.astype('float32')
+    X_train /= 255
+    return X_train, Y_train
 
-# ---------------------------------------------------------------------------------------------------------------------
+
+def load_test_data():
+    """
+    Load test images
+
+    Returns:
+        X_test  (list of images):   test images
+    """
+    files = ["Egg_photos / DSC_2396.JPG", "Egg_photos / DSC_2397.JPG",
+             "Egg_photos / DSC_2398.JPG", "Egg_photos / DSC_2399.JPG",
+             "Egg_photos / DSC_2407.JPG", "Egg_photos / DSC_2420.JPG",
+             "Egg_photos / DSC_2421.JPG", "Egg_photos / DSC_2422.JPG",
+             "Egg_photos / DSC_2423.JPG", "Egg_photos / DSC_2424.JPG"]
+    X_size = cv2.imread(files[0].rstrip("jpgJPG").rstrip(".").replace(" ", "") + "_480p.JPG").shape
+    X_test = np.zeros((10, X_size[0], X_size[1], X_size[2]))
+    for i in range(len(files)):
+        X_test[i] = cv2.imread(files[i].rstrip("jpgJPG").rstrip(".").replace(" ", "") + "_480p.JPG")
+
+    X_test = X_test.astype('float32')
+    X_test /= 255
+    return X_test
