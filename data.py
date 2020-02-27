@@ -202,7 +202,7 @@ def average_egg_coefficient(dmap_path):
     """
 
     dmap = cv2.imread(dmap_path)
-    data = np.loadtxt(dmap_path.strip('_dmap.JPG') + '.txt')
+    data = np.loadtxt(dmap_path.strip('_dmap.JPG') + 'p.txt')
     eggs = data.shape[0]  # get number of eggs
     heat_sum = np.sum(dmap)  # integrating over training output (y)
     aec = heat_sum / eggs  # determining amount of 'heat' per egg
@@ -425,10 +425,10 @@ def load_train_data():
     X_size = cv2.imread(files[0].rstrip("jpgJPG").rstrip(".").replace(" ", "") + "_480p.JPG").shape
     Y_size = cv2.imread(files[0].rstrip("jpgJPG").rstrip(".").replace(" ", "") + "_480p_dmap.JPG").shape
     X_train = np.zeros((10, X_size[0], X_size[1], X_size[2]))
-    Y_train = np.zeros((10, Y_size[0], Y_size[1], Y_size[2]))
+    Y_train = np.zeros((10, Y_size[0], Y_size[1]))
     for i in range(len(files)):
         X_train[i] = cv2.imread(files[i].rstrip("jpgJPG").rstrip(".").replace(" ", "") + "_480p.JPG")
-        Y_train[i] = cv2.imread(files[i].rstrip("jpgJPG").rstrip(".").replace(" ", "") + "_480p_dmap.JPG")
+        Y_train[i] = cv2.imread(files[i].rstrip("jpgJPG").rstrip(".").replace(" ", "") + "_480p_dmap.JPG")[:, :, 0]
 
     X_train = X_train.astype('float32')
     Y_train = Y_train.astype('float32')
