@@ -6,3 +6,7 @@ extract_photos.py
 largest_box_size.py
 reindex_classes.py
 temp.py
+*.h5
+*.jpg
+*.JPG
+*.hdf5

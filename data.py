@@ -10,9 +10,10 @@ Potential future work: alter generate_density_map to deal with dessicated eggs -
     on first channel and dessicated on second channel. Will require higher resolution image (current default of 480p
     is insufficient to distinguish between the two cases), modifying and re-training EggCountNet for two output classes.
 """
-import sys
+import os
 import cv2
 import numpy as np
+import matplotlib.pyplot as plt
 from win32api import GetSystemMetrics
 import tkinter as tk
 from tkinter import filedialog
@@ -122,11 +123,15 @@ def coor_crop_shift(original_coordinates, cropped_image_corners):
     Returns:
         cropped_coordinates:    coordinates in cropped image space (x, y)
     """
-    cropped_coordinates = np.zeros_like(original_coordinates)
+    cropped_coordinates = np.zeros([0, 2])
     min_x = min(cropped_image_corners[0][0], cropped_image_corners[1][0])
+    max_x = max(cropped_image_corners[0][0], cropped_image_corners[1][0])
     min_y = min(cropped_image_corners[0][1], cropped_image_corners[1][1])
-    cropped_coordinates[:, 0] = original_coordinates[:, 0] - min_x
-    cropped_coordinates[:, 1] = original_coordinates[:, 1] - min_y
+    max_y = max(cropped_image_corners[0][1], cropped_image_corners[1][1])
+    for i in range(original_coordinates.shape[0]):
+        if min_x <= original_coordinates[i, 0] <= max_x and min_y <= original_coordinates[i, 1] <= max_y:
+            cropped_coordinates = np.append(cropped_coordinates, [[original_coordinates[i, 0] - min_x,
+                                                                   original_coordinates[i, 1] - min_y]], axis=0)
     return cropped_coordinates
 
 
@@ -149,23 +154,22 @@ def draw_points_on_image(image, coordinates):
         image[coordinates[i, 1], coordinates[i, 0] + 1] = paint
         image[coordinates[i, 1], coordinates[i, 0] - 1] = paint
 
-    cv2.imshow("image", image)
-    cv2.waitKey(0)
-    cv2.destroyAllWindows()
+    plt.imshow(image)
+    plt.show()
 
     return None
 
 
-def generate_density_map(img_path, coor_path):
+def generate_density_map(img_path: str, coor_path: str):
     """
-    Generate a density map based on objects positions. Saves as file.
+    Generate a density map based on objects positions.
 
     Args:
         img_path (str):     location of image
         coor_path (str):    location of txt file containing coordinate info in (x, y) format
 
     Returns:
-        None
+        density_map:        density map of inputted image
     """
 
     assert img_path.strip('.JPG') == coor_path.strip('.txt'), 'img_path and coor_path files do not match'
@@ -174,7 +178,7 @@ def generate_density_map(img_path, coor_path):
     coor = np.loadtxt(coor_path)
     coor = coor.astype(int)  # round to int
     # initialise density map of size image - only 1 channel
-    density_map = np.zeros((img.shape[0], img.shape[1]), np.uint8)
+    density_map = np.zeros((img.shape[0], img.shape[1]), dtype=np.float32)
 
     # applying heat of 100 at location of eggs
     for i in range(coor.shape[0]):
@@ -182,35 +186,39 @@ def generate_density_map(img_path, coor_path):
 
     # apply Gaussian kernel to density map
     density_map = gaussian_filter(density_map, sigma=(1, 1), order=0)
-
-    # save density map
-    cv2.imwrite(img_path.strip('.JPG') + '_dmap.JPG', density_map)
-
-    return None
+    return density_map
 
 
-def average_egg_coefficient(dmap_path):
+def average_egg_density_coefficient(dmap_path: str = None):
     """
-    Sanity check. Takes in density map path. Infers coordinate data from that.
-        Determines the amount of 'heat' per egg in the
+    **********************************************************
+    DEPRECATED. NOT ACTUALLY NEEDED. Use value of 100 instead.
+    **********************************************************
+    If density map path inputted, method will calculate the average egg density of that density map, append it to the
+        aedc.out file for the record, average out existing coefficients, and return the averaged value.
+        If no density map path inputted, will load in the aedc.out file, average out and return existing coefficients.
 
     Arg:
         dmap_path (str):    location of density map (.JPG)
 
     Returns:
-        aec (float):        average egg coefficient - the amount of 'heat' per egg
+        aedc_avg (float):   average egg density coefficient - the amount of 'heat' per egg
     """
+    aedc_filepath = 'aedc.out'
+    aedc_array = np.loadtxt(aedc_filepath)
+    if dmap_path:
+        dmap = cv2.imread(dmap_path)
+        data = np.loadtxt(dmap_path.strip('_dmap.JPG') + 'p.txt')
+        eggs = data.shape[0]  # get number of eggs
+        print('Eggs:\t' + str(eggs))
+        heat_sum = np.sum(dmap)  # integrating over training output (y)
+        print('Heat:\t' + str(heat_sum))
+        aedc = heat_sum / eggs  # determining amount of 'heat' per egg
+        aedc_array = np.append(aedc_array, aedc)  # append value to file
+        np.savetxt(aedc_filepath, aedc_array)
 
-    dmap = cv2.imread(dmap_path)
-    data = np.loadtxt(dmap_path.strip('_dmap.JPG') + 'p.txt')
-    eggs = data.shape[0]  # get number of eggs
-    heat_sum = np.sum(dmap)  # integrating over training output (y)
-    aec = heat_sum / eggs  # determining amount of 'heat' per egg
-
-    print('Number of eggs:\t' + str(eggs))
-    print('Average egg coefficient:\t' + str(aec))
-
-    return aec
+    aedc_avg = np.mean(aedc_array)  # determine average aedc
+    return aedc_avg
 
 
 def cropped_box_shift(corners, desired_aspect_ratio):
@@ -246,7 +254,7 @@ def cropped_box_shift(corners, desired_aspect_ratio):
     return adjusted_corners
 
 
-def image_crop_and_scale(resolution="480p"):
+def image_crop_and_scale(resolution: str = "480p"):
     """
     Prompts user to crop image in the section in which eggs exist. Unless specified, crops to 640x480p. Saves cropped
     image as .JPG
@@ -300,28 +308,37 @@ def image_crop_and_scale(resolution="480p"):
     cropped_corners = [(x_start, y_start), (x_end, y_end)]
     cropped_corners = cropped_box_shift(cropped_corners, aspect_ratio)
     image_cropped = image_rescaled[cropped_corners[0][1]:cropped_corners[1][1],
-                                   cropped_corners[0][0]:cropped_corners[1][0]]
+                    cropped_corners[0][0]:cropped_corners[1][0]]
 
     # Final downscaling to 480p format of both cropped image and coordinates for U-Net to process more easily.
     image_final_res, rf_final_res = image_rescale(image_cropped, res_tuple)
 
-    save_path = img_path.rstrip("jpgJPG").rstrip('.')
-    img_path_save = save_path + "_" + resolution + ".JPG"
-    cv2.imwrite(img_path_save, image_final_res)
+    # save_path = img_path.rstrip("jpgJPG").rstrip('.')
+    # img_path_save = save_path + "_" + resolution + ".JPG"
+    # cv2.imwrite(img_path_save, image_final_res)
+
+    return image_final_res
 
 
-def image_crop_scale_dmap(resolution="480p"):
+def image_crop_scale_dmap(resolution: str = "480p"):
     """
-
+    Prompts user to select an image to crop. Scales the image to the input resolution (extends smallest dimension
+        between height and width to do so). Saves cropped image with the coordinates of eggs within that cropped image.
+        Generates density map, and saves that too.
     Args:
         resolution:
 
     Returns:
-
+        img_path:           path of the original image that user selected
+        image_final_res:    cropped image
+        coor_final_res:     coordinates of eggs within cropped image
+        dmap:               density map of cropped image
     """
-    # cropping = False
-    # cropped = False
-    # x_start, y_start, x_end, y_end = 0, 0, 0, 0
+    global cropping, cropped, x_start, y_start, x_end, y_end
+    cropping = False
+    cropped = False
+    x_start, y_start, x_end, y_end = 0, 0, 0, 0
+
     res = {"240p": (320, 240),
            "360p": (480, 360),
            "480p": (640, 480),
@@ -385,9 +402,27 @@ def image_crop_scale_dmap(resolution="480p"):
     save_path = img_path.rstrip("jpgJPG").rstrip('.')
     img_path_save = save_path + "_" + resolution + ".JPG"
     coor_path_save = save_path + "_" + resolution + ".txt"
+    dmap_path_save = save_path + "_" + resolution + "_dmap.JPG"
     cv2.imwrite(img_path_save, image_final_res)
     np.savetxt(coor_path_save, coor_final_res)
-    generate_density_map(img_path_save, coor_path_save)
+
+    dmap = generate_density_map(img_path_save, coor_path_save)
+    cv2.imwrite(dmap_path_save, dmap)
+    return img_path, image_final_res, coor_final_res, dmap
+
+
+def heat_map(X_img, Y_img):
+    """
+    Sanity check to visually determine whether an image's density map matches up with ground truth.
+    Args:
+        X_img:  normal image of eggs
+        Y_img:  density map
+    """
+    plt.subplot(1, 2, 1)
+    plt.imshow(X_img)
+    plt.subplot(1, 2, 2)
+    plt.imshow(Y_img[:, :, 0], cmap='plasma')
+    plt.colorbar()
 
 
 def get_image_path():
@@ -417,18 +452,14 @@ def load_train_data():
         Y_train (list of images):   density maps of training images
 
     """
-    files = ["Egg_photos / DSC_2378.JPG", "Egg_photos / DSC_2379.JPG",
-             "Egg_photos / DSC_2380.JPG", "Egg_photos / DSC_2381.JPG",
-             "Egg_photos / DSC_2382.JPG", "Egg_photos / DSC_2391.JPG",
-             "Egg_photos / DSC_2392.JPG", "Egg_photos / DSC_2393.JPG",
-             "Egg_photos / DSC_2394.JPG", "Egg_photos / DSC_2395.JPG"]
-    X_size = cv2.imread(files[0].rstrip("jpgJPG").rstrip(".").replace(" ", "") + "_480p.JPG").shape
-    Y_size = cv2.imread(files[0].rstrip("jpgJPG").rstrip(".").replace(" ", "") + "_480p_dmap.JPG").shape
-    X_train = np.zeros((10, X_size[0], X_size[1], X_size[2]))
-    Y_train = np.zeros((10, Y_size[0], Y_size[1]))
-    for i in range(len(files)):
-        X_train[i] = cv2.imread(files[i].rstrip("jpgJPG").rstrip(".").replace(" ", "") + "_480p.JPG")
-        Y_train[i] = cv2.imread(files[i].rstrip("jpgJPG").rstrip(".").replace(" ", "") + "_480p_dmap.JPG")[:, :, 0]
+    X_files = get_file_list('egg_photos/train/', "_480p.JPG")
+    X_size = cv2.imread(X_files[0]).shape
+    Y_size = cv2.imread(X_files[0].rstrip("jpgJPG").strip('.') + "_dmap.JPG").shape
+    X_train = np.zeros((X_files.__len__(), X_size[0], X_size[1], X_size[2]))
+    Y_train = np.zeros((X_files.__len__(), Y_size[0], Y_size[1], 1))
+    for i in range(X_files.__len__()):
+        X_train[i] = cv2.imread(X_files[i])
+        Y_train[i, :, :, 0] = cv2.imread(X_files[i].rstrip("jpgJPG").strip('.') + "_dmap.JPG")[:, :, 0]
 
     X_train = X_train.astype('float32')
     Y_train = Y_train.astype('float32')
@@ -443,16 +474,58 @@ def load_test_data():
     Returns:
         X_test  (list of images):   test images
     """
-    files = ["Egg_photos / DSC_2396.JPG", "Egg_photos / DSC_2397.JPG",
-             "Egg_photos / DSC_2398.JPG", "Egg_photos / DSC_2399.JPG",
-             "Egg_photos / DSC_2407.JPG", "Egg_photos / DSC_2420.JPG",
-             "Egg_photos / DSC_2421.JPG", "Egg_photos / DSC_2422.JPG",
-             "Egg_photos / DSC_2423.JPG", "Egg_photos / DSC_2424.JPG"]
-    X_size = cv2.imread(files[0].rstrip("jpgJPG").rstrip(".").replace(" ", "") + "_480p.JPG").shape
-    X_test = np.zeros((10, X_size[0], X_size[1], X_size[2]))
-    for i in range(len(files)):
-        X_test[i] = cv2.imread(files[i].rstrip("jpgJPG").rstrip(".").replace(" ", "") + "_480p.JPG")
+    X_files = get_file_list('egg_photos/test/', "_480p.JPG")
+    X_size = cv2.imread(X_files[0]).shape
+    X_test = np.zeros((X_files.__len__(), X_size[0], X_size[1], X_size[2]))
+    for i in range(len(X_files)):
+        X_test[i] = cv2.imread(X_files[i])
 
     X_test = X_test.astype('float32')
     X_test /= 255
     return X_test
+
+
+def generate_data(n_img):
+    """
+    Data augmentation: creates sub-images from existing images that have egg coordinates file.
+    Basically a loop... I'm lazy alright.
+    Args:
+        n_img: number of sub-images to create
+
+    Returns:
+
+    """
+    for i in range(n_img):
+        img_path, image, coor, dmap = image_crop_scale_dmap()
+
+
+def get_file_list(path: str, search_term: str):
+    """
+    Returns a list of files that matches search term within the directory provided.
+    Args:
+        path (str):             directory in which to search
+        search_term (str):      search term
+
+    Returns:
+        files (list of str):    list of files
+    """
+    files = []
+    # r=root, d=directories, f = files
+    for r, d, f in os.walk(path):
+        for file in f:
+            if search_term in file:
+                files.append(os.path.join(r, file))
+    return files
+
+
+def bulk_gen_dmap():
+    """
+    ***This function was to correct a previous error in generating density map. It is of no real use now.***
+    Generates density map of all files matching search term within a folder, given that its coordinates files exists.
+    Returns:
+
+    """
+    files = get_file_list('egg_photos/train', '_480p.JPG')
+    for f in files:
+        dmap = generate_density_map(f, f.rstrip('JPG').rstrip('.') + '.txt')
+        cv2.imwrite(f.rstrip('JPG').rstrip('.') + '_dmap.JPG', dmap)
