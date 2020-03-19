@@ -10,3 +10,6 @@ temp.py
 *.jpg
 *.JPG
 *.hdf5
+*.dmap
+*_dmap.txt
+*.txt

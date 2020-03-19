@@ -7,12 +7,8 @@ Created on Fri Jan 27 19:13:36 2017
 @description:
 
 TODO:
-<<<<<<< HEAD
     - add more data - random section cropping? regularize, batch norm
     - load model properly in predict - get last loss
-=======
-    - change loss calculation to achieve non-trivial solution *currently getting all 0 weights
->>>>>>> parent of e87d2c8... added lr scheduler
 """
 
 import numpy as np
@@ -104,13 +100,8 @@ class EggCountNet(object):
                                      kernel_initializer='he_normal', use_bias=True)(block9)
         # =========================================================================
         model = Model(inputs=inputs, outputs=density_pred)
-<<<<<<< HEAD
         optim = Adam()
         model.compile(optimizer=optim, loss='mean_squared_error', metrics=['acc'])
-=======
-        optim = Adam(lr=0.001)
-        model.compile(optimizer=optim, loss='mean_squared_error', metrics=['mae'])
->>>>>>> parent of e87d2c8... added lr scheduler
         if pre_trained_weights:
             model.load_weights(pre_trained_weights)
             print('weights loaded')
@@ -145,8 +136,6 @@ class EggCountNet(object):
         up_conv4 = Convolution2D(filters=256, kernel_size=2, activation='relu', padding='same',
                                  kernel_initializer='he_normal')(up_samp4)
         up4 = concatenate([block3, up_conv4])  # concat: 256+256=512
-        # =========================================================================
-        # =========================================================================
         # =========================================================================
         block7 = Convolution2D(filters=256, kernel_size=3, activation='relu', padding='same',
                                kernel_initializer='he_normal')(up4)
@@ -195,20 +184,18 @@ class EggCountNet(object):
                                kernel_initializer='he_normal')(pool1)
         block2 = Convolution2D(filters=128, kernel_size=3, activation='relu', padding='same',
                                kernel_initializer='he_normal')(block2)
-        pool2 = MaxPooling2D(pool_size=(2, 2))(block2)
+        drop2 = Dropout(0.5)(block2)
+        pool2 = MaxPooling2D(pool_size=(2, 2))(drop2)
         # =========================================================================
         block3 = Convolution2D(filters=256, kernel_size=3, activation='relu', padding='same',
                                kernel_initializer='he_normal')(pool2)
         block3 = Convolution2D(filters=256, kernel_size=3, activation='relu', padding='same',
                                kernel_initializer='he_normal')(block3)
-        up_samp3 = UpSampling2D(size=(2, 2))(block3)
+        drop3 = Dropout(0.5)(block3)
+        up_samp3 = UpSampling2D(size=(2, 2))(drop3)
         up_conv3 = Convolution2D(filters=128, kernel_size=2, activation='relu', padding='same',
                                  kernel_initializer='he_normal')(up_samp3)
-        up3 = concatenate([block2, up_conv3])  # concat: 128+128=256
-        # =========================================================================
-        # =========================================================================
-        # =========================================================================
-        # =========================================================================
+        up3 = concatenate([drop2, up_conv3])  # concat: 128+128=256
         # =========================================================================
         block8 = Convolution2D(filters=128, kernel_size=3, activation='relu', padding='same',
                                kernel_initializer='he_normal')(up3)
@@ -238,7 +225,6 @@ class EggCountNet(object):
     def train(self, model_file):
         print("Loading data...")
         X_train, Y_train = load_train_data()
-        X_test = load_test_data()
         print("Loading data done")
 
         if exists(model_file):
@@ -256,21 +242,19 @@ class EggCountNet(object):
         # model.summary()
 
         def scheduler(epoch):
-            lr_init = 1e-4
+            lr_init = 1e-8
             ep_switch = 5
             if epoch < ep_switch:
                 return lr_init
             else:
-<<<<<<< HEAD
                 return lr_init * np.exp(0.05 * (ep_switch - epoch))
-=======
-                return 1e-4 * np.exp(0.1 * (epoch - 20))
->>>>>>> parent of e87d2c8... added lr scheduler
 
         model_learning_rate = LearningRateScheduler(scheduler, verbose=1)
         model_checkpoint = ModelCheckpoint(model_file, monitor='loss', verbose=1, save_best_only=True)
         print('Fitting model...')
-        history = model.fit(X_train, Y_train, batch_size=3, validation_split=0.25, epochs=50, verbose=1,
+
+        # batch_size limited to 1 due to my own GPU's memory limitations
+        history = model.fit(X_train, Y_train, batch_size=1, validation_split=0.2, epochs=50, verbose=1,
                             shuffle=True, callbacks=[model_checkpoint, model_learning_rate])
 
         # plot loss during training
@@ -281,6 +265,7 @@ class EggCountNet(object):
         plt.show()
 
         # print('predict test data')
+        # X_test = load_test_data()
         # Y_test = model.predict(X_test, batch_size=1, verbose=1)
         # np.save('Y_test.npy', Y_test)
 
@@ -321,7 +306,7 @@ class EggCountNet(object):
 
 if __name__ == '__main__':
     eggstimator = EggCountNet()
-    model_file = 'model_unet7.h5'
+    model_file = 'model_unet9.h5'
     eggstimator.train(model_file)
     # eggstimator.predict(model_file)
     # eggstimator.validate(model_file)

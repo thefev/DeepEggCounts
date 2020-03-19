@@ -172,7 +172,7 @@ def generate_density_map(img_path: str, coor_path: str):
         density_map:        density map of inputted image
     """
 
-    assert img_path.strip('.JPG') == coor_path.strip('.txt'), 'img_path and coor_path files do not match'
+    assert img_path.rstrip('.JPG') == coor_path.rstrip('.txt'), 'img_path and coor_path files do not match'
 
     img = cv2.imread(img_path)
     coor = np.loadtxt(coor_path)
@@ -383,7 +383,7 @@ def image_crop_scale_dmap(resolution: str = "480p"):
     cropped_corners = cropped_box_shift(cropped_corners, aspect_ratio)
     [(x_start, y_start), (x_end, y_end)] = cropped_corners
     image_cropped = image_rescaled[cropped_corners[0][1]:cropped_corners[1][1],
-                    cropped_corners[0][0]:cropped_corners[1][0]]
+                                   cropped_corners[0][0]:cropped_corners[1][0]]
     coor_cropped = coor_crop_shift(coor_rescaled, cropped_corners)
 
     # sanity check: ensuring all coordinates are within bounds of cropped image space
@@ -407,7 +407,8 @@ def image_crop_scale_dmap(resolution: str = "480p"):
     np.savetxt(coor_path_save, coor_final_res)
 
     dmap = generate_density_map(img_path_save, coor_path_save)
-    cv2.imwrite(dmap_path_save, dmap)
+    # cv2.imwrite(dmap_path_save, dmap)
+    np.savetxt(dmap_path_save, dmap)
     return img_path, image_final_res, coor_final_res, dmap
 
 
@@ -454,12 +455,14 @@ def load_train_data():
     """
     X_files = get_file_list('egg_photos/train/', "_480p.JPG")
     X_size = cv2.imread(X_files[0]).shape
-    Y_size = cv2.imread(X_files[0].rstrip("jpgJPG").strip('.') + "_dmap.JPG").shape
+    # Y_size = cv2.imread(X_files[0].rstrip("jpgJPG").strip('.') + "_dmap.JPG").shape
+    Y_size = np.loadtxt(X_files[0].rstrip("jpgJPG").strip('.') + "_dmap.txt").shape
     X_train = np.zeros((X_files.__len__(), X_size[0], X_size[1], X_size[2]))
     Y_train = np.zeros((X_files.__len__(), Y_size[0], Y_size[1], 1))
     for i in range(X_files.__len__()):
         X_train[i] = cv2.imread(X_files[i])
-        Y_train[i, :, :, 0] = cv2.imread(X_files[i].rstrip("jpgJPG").strip('.') + "_dmap.JPG")[:, :, 0]
+        # Y_train[i, :, :, 0] = cv2.imread(X_files[i].rstrip("jpgJPG").strip('.') + "_dmap.JPG")[:, :, 0]
+        Y_train[i, :, :, 0] = np.loadtxt(X_files[i].rstrip("jpgJPG").strip('.') + "_dmap.txt")
 
     X_train = X_train.astype('float32')
     Y_train = Y_train.astype('float32')
@@ -528,4 +531,5 @@ def bulk_gen_dmap():
     files = get_file_list('egg_photos/train', '_480p.JPG')
     for f in files:
         dmap = generate_density_map(f, f.rstrip('JPG').rstrip('.') + '.txt')
-        cv2.imwrite(f.rstrip('JPG').rstrip('.') + '_dmap.JPG', dmap)
+        np.savetxt(f.rstrip('JPG').rstrip('.') + '_dmap.txt', dmap)
+        # cv2.imwrite(f.rstrip('JPG').rstrip('.') + '_dmap.JPG', dmap)

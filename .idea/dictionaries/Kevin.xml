@@ -5,9 +5,11 @@
       <w>coor</w>
       <w>dmap</w>
       <w>eggstimator</w>
+      <w>optim</w>
       <w>pred</w>
       <w>relu</w>
       <w>samp</w>
+      <w>unet</w>
       <w>yolo</w>
       <w>yost</w>
     </words>
