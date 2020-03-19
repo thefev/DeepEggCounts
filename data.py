@@ -189,38 +189,6 @@ def generate_density_map(img_path: str, coor_path: str):
     return density_map
 
 
-def average_egg_density_coefficient(dmap_path: str = None):
-    """
-    **********************************************************
-    DEPRECATED. NOT ACTUALLY NEEDED. Use value of 100 instead.
-    **********************************************************
-    If density map path inputted, method will calculate the average egg density of that density map, append it to the
-        aedc.out file for the record, average out existing coefficients, and return the averaged value.
-        If no density map path inputted, will load in the aedc.out file, average out and return existing coefficients.
-
-    Arg:
-        dmap_path (str):    location of density map (.JPG)
-
-    Returns:
-        aedc_avg (float):   average egg density coefficient - the amount of 'heat' per egg
-    """
-    aedc_filepath = 'aedc.out'
-    aedc_array = np.loadtxt(aedc_filepath)
-    if dmap_path:
-        dmap = cv2.imread(dmap_path)
-        data = np.loadtxt(dmap_path.strip('_dmap.JPG') + 'p.txt')
-        eggs = data.shape[0]  # get number of eggs
-        print('Eggs:\t' + str(eggs))
-        heat_sum = np.sum(dmap)  # integrating over training output (y)
-        print('Heat:\t' + str(heat_sum))
-        aedc = heat_sum / eggs  # determining amount of 'heat' per egg
-        aedc_array = np.append(aedc_array, aedc)  # append value to file
-        np.savetxt(aedc_filepath, aedc_array)
-
-    aedc_avg = np.mean(aedc_array)  # determine average aedc
-    return aedc_avg
-
-
 def cropped_box_shift(corners, desired_aspect_ratio):
     """
     Adjusts corner coordinates of a box to match desired aspect ratio so as not to distort the image. This is achieved

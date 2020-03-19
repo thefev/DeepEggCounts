@@ -18,7 +18,7 @@ from keras.callbacks import ModelCheckpoint, LearningRateScheduler
 from keras.models import Model, load_model
 from keras.layers import *
 from keras.optimizers import *
-from data import load_train_data, load_test_data, image_crop_and_scale, average_egg_density_coefficient
+from data import load_train_data, load_test_data, image_crop_and_scale
 
 
 class EggCountNet(object):
@@ -242,7 +242,7 @@ class EggCountNet(object):
         # model.summary()
 
         def scheduler(epoch):
-            lr_init = 1e-8
+            lr_init = 1e-10
             ep_switch = 5
             if epoch < ep_switch:
                 return lr_init
@@ -278,10 +278,12 @@ class EggCountNet(object):
         img = image_crop_and_scale()
         img = img[np.newaxis, ...]
         y_pred = model.predict(img)
-        heat_pred = np.sum(y_pred)
+        heat_pred = np.sum(y_pred[i])
         print('Heat predicted:\t' + str(heat_pred))
-        eggs_pred = int(np.round(heat_pred / average_egg_density_coefficient()))
+        eggs_pred = int(np.round(heat_pred / 100))
         print('Predicted number of eggs:\t' + str(eggs_pred))
+        print('-' * 30)
+
 
     def validate(self, model_file):
         if exists(model_file):
@@ -306,7 +308,7 @@ class EggCountNet(object):
 
 if __name__ == '__main__':
     eggstimator = EggCountNet()
-    model_file = 'model_unet9.h5'
+    model_file = 'model_unet5.h5'
     eggstimator.train(model_file)
     # eggstimator.predict(model_file)
     # eggstimator.validate(model_file)
