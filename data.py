@@ -413,11 +413,12 @@ def heat_map(X_img, Y_img):
         X_img:  normal image of eggs
         Y_img:  density map
     """
+    plt.figure()
     plt.subplot(1, 2, 1)
     plt.imshow(X_img)
     plt.subplot(1, 2, 2)
     plt.imshow(Y_img[:, :, 0], cmap='plasma')
-    plt.colorbar()
+    # plt.colorbar()
 
 
 def get_image_path():

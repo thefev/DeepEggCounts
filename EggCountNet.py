@@ -6,19 +6,22 @@ Created on Fri Jan 27 19:13:36 2017
 
 @description:
 
-TODO:
-    - add more data - random section cropping? regularize, batch norm
-    - load model properly in predict - get last loss
-"""
 
+"""
+import datetime
 import numpy as np
 import matplotlib.pyplot as plt
 from os.path import exists
-from keras.callbacks import ModelCheckpoint, LearningRateScheduler
+from keras.callbacks import ModelCheckpoint, LearningRateScheduler, TensorBoard
 from keras.models import Model, load_model
 from keras.layers import *
 from keras.optimizers import *
-from data import load_train_data, load_train_data_binary, load_test_data, image_crop_and_scale
+from data import *
+
+# TODO:
+#     - fix vanishing gradient problem: batch norm
+#     - load model properly in predict - get last loss
+#     -
 
 
 class EggCountNet(object):
@@ -27,6 +30,7 @@ class EggCountNet(object):
         self.img_cols = img_cols
 
     def buildModel_U_net_9block(self, pre_trained_weights: str = None):
+        drop_out_factor = 0.5
         inputs = Input((self.img_rows, self.img_cols, 3))
         # =========================================================================
         block1 = Convolution2D(filters=64, kernel_size=3, activation='relu', padding='same',
@@ -51,14 +55,14 @@ class EggCountNet(object):
                                kernel_initializer='he_normal')(pool3)
         block4 = Convolution2D(filters=512, kernel_size=3, activation='relu', padding='same',
                                kernel_initializer='he_normal')(block4)
-        drop4 = Dropout(0.5)(block4)
+        drop4 = Dropout(drop_out_factor)(block4)
         pool4 = MaxPooling2D(pool_size=(2, 2))(drop4)
         # =========================================================================
         block5 = Convolution2D(filters=1024, kernel_size=3, activation='relu', padding='same',
                                kernel_initializer='he_normal')(pool4)
         block5 = Convolution2D(filters=1024, kernel_size=3, activation='relu', padding='same',
                                kernel_initializer='he_normal')(block5)
-        drop5 = Dropout(0.5)(block5)
+        drop5 = Dropout(drop_out_factor)(block5)
         up_samp5 = UpSampling2D(size=(2, 2))(drop5)
         up_conv5 = Convolution2D(filters=512, kernel_size=2, activation='relu', padding='same',
                                  kernel_initializer='he_normal')(up_samp5)
@@ -110,71 +114,71 @@ class EggCountNet(object):
     def buildModel_U_net_9block_binary(self, pre_trained_weights: str = None):
         inputs = Input((self.img_rows, self.img_cols, 3))
         # =========================================================================
-        block1 = Convolution2D(filters=64, kernel_size=3, activation='relu', padding='same',
+        block1 = Convolution2D(filters=64, kernel_size=3, activation='sigmoid', padding='same',
                                kernel_initializer='he_normal')(inputs)
-        block1 = Convolution2D(filters=64, kernel_size=3, activation='relu', padding='same',
+        block1 = Convolution2D(filters=64, kernel_size=3, activation='sigmoid', padding='same',
                                kernel_initializer='he_normal')(block1)
         pool1 = MaxPooling2D(pool_size=(2, 2))(block1)
         # =========================================================================
-        block2 = Convolution2D(filters=128, kernel_size=3, activation='relu', padding='same',
+        block2 = Convolution2D(filters=128, kernel_size=3, activation='sigmoid', padding='same',
                                kernel_initializer='he_normal')(pool1)
-        block2 = Convolution2D(filters=128, kernel_size=3, activation='relu', padding='same',
+        block2 = Convolution2D(filters=128, kernel_size=3, activation='sigmoid', padding='same',
                                kernel_initializer='he_normal')(block2)
         pool2 = MaxPooling2D(pool_size=(2, 2))(block2)
         # =========================================================================
-        block3 = Convolution2D(filters=256, kernel_size=3, activation='relu', padding='same',
+        block3 = Convolution2D(filters=256, kernel_size=3, activation='sigmoid', padding='same',
                                kernel_initializer='he_normal')(pool2)
-        block3 = Convolution2D(filters=256, kernel_size=3, activation='relu', padding='same',
+        block3 = Convolution2D(filters=256, kernel_size=3, activation='sigmoid', padding='same',
                                kernel_initializer='he_normal')(block3)
         pool3 = MaxPooling2D(pool_size=(2, 2))(block3)
         # =========================================================================
-        block4 = Convolution2D(filters=512, kernel_size=3, activation='relu', padding='same',
+        block4 = Convolution2D(filters=512, kernel_size=3, activation='sigmoid', padding='same',
                                kernel_initializer='he_normal')(pool3)
-        block4 = Convolution2D(filters=512, kernel_size=3, activation='relu', padding='same',
+        block4 = Convolution2D(filters=512, kernel_size=3, activation='sigmoid', padding='same',
                                kernel_initializer='he_normal')(block4)
         drop4 = Dropout(0.5)(block4)
         pool4 = MaxPooling2D(pool_size=(2, 2))(drop4)
         # =========================================================================
-        block5 = Convolution2D(filters=1024, kernel_size=3, activation='relu', padding='same',
+        block5 = Convolution2D(filters=1024, kernel_size=3, activation='sigmoid', padding='same',
                                kernel_initializer='he_normal')(pool4)
-        block5 = Convolution2D(filters=1024, kernel_size=3, activation='relu', padding='same',
+        block5 = Convolution2D(filters=1024, kernel_size=3, activation='sigmoid', padding='same',
                                kernel_initializer='he_normal')(block5)
         drop5 = Dropout(0.5)(block5)
         up_samp5 = UpSampling2D(size=(2, 2))(drop5)
-        up_conv5 = Convolution2D(filters=512, kernel_size=2, activation='relu', padding='same',
+        up_conv5 = Convolution2D(filters=512, kernel_size=2, activation='sigmoid', padding='same',
                                  kernel_initializer='he_normal')(up_samp5)
         up5 = concatenate([drop4, up_conv5])  # concat: 512 + 512 = 1024
         # =========================================================================
-        block6 = Convolution2D(filters=512, kernel_size=3, activation='relu', padding='same',
+        block6 = Convolution2D(filters=512, kernel_size=3, activation='sigmoid', padding='same',
                                kernel_initializer='he_normal')(up5)
-        block6 = Convolution2D(filters=512, kernel_size=3, activation='relu', padding='same',
+        block6 = Convolution2D(filters=512, kernel_size=3, activation='sigmoid', padding='same',
                                kernel_initializer='he_normal')(block6)
         up_samp6 = UpSampling2D(size=(2, 2))(block6)
-        up_conv6 = Convolution2D(filters=256, kernel_size=2, activation='relu', padding='same',
+        up_conv6 = Convolution2D(filters=256, kernel_size=2, activation='sigmoid', padding='same',
                                  kernel_initializer='he_normal')(up_samp6)
         up6 = concatenate([block3, up_conv6])  # concat: 256 + 256 = 512
         # =========================================================================
-        block7 = Convolution2D(filters=256, kernel_size=3, activation='relu', padding='same',
+        block7 = Convolution2D(filters=256, kernel_size=3, activation='sigmoid', padding='same',
                                kernel_initializer='he_normal')(up6)
-        block7 = Convolution2D(filters=256, kernel_size=3, activation='relu', padding='same',
+        block7 = Convolution2D(filters=256, kernel_size=3, activation='sigmoid', padding='same',
                                kernel_initializer='he_normal')(block7)
         up_samp7 = UpSampling2D(size=(2, 2))(block7)
-        up_conv7 = Convolution2D(filters=128, kernel_size=2, activation='relu', padding='same',
+        up_conv7 = Convolution2D(filters=128, kernel_size=2, activation='sigmoid', padding='same',
                                  kernel_initializer='he_normal')(up_samp7)
         up7 = concatenate([block2, up_conv7])  # concat: 128 + 128 = 256
         # =========================================================================
-        block8 = Convolution2D(filters=128, kernel_size=3, activation='relu', padding='same',
+        block8 = Convolution2D(filters=128, kernel_size=3, activation='sigmoid', padding='same',
                                kernel_initializer='he_normal')(up7)
-        block8 = Convolution2D(filters=128, kernel_size=3, activation='relu', padding='same',
+        block8 = Convolution2D(filters=128, kernel_size=3, activation='sigmoid', padding='same',
                                kernel_initializer='he_normal')(block8)
         up_samp8 = UpSampling2D(size=(2, 2))(block8)
-        up_conv8 = Convolution2D(filters=64, kernel_size=2, activation='relu', padding='same',
+        up_conv8 = Convolution2D(filters=64, kernel_size=2, activation='sigmoid', padding='same',
                                  kernel_initializer='he_normal')(up_samp8)
         up8 = concatenate([block1, up_conv8])  # concat: 64 + 64 -> 128
         # =========================================================================
-        block9 = Convolution2D(filters=64, kernel_size=3, activation='relu', padding='same',
+        block9 = Convolution2D(filters=64, kernel_size=3, activation='sigmoid', padding='same',
                                kernel_initializer='he_normal')(up8)
-        block9 = Convolution2D(filters=64, kernel_size=3, activation='relu', padding='same',
+        block9 = Convolution2D(filters=64, kernel_size=3, activation='sigmoid', padding='same',
                                kernel_initializer='he_normal')(block9)  # (480, 640, 64)
         # =========================================================================
         density_pred = Convolution2D(filters=1, kernel_size=1, activation='sigmoid', padding='same',
@@ -253,26 +257,30 @@ class EggCountNet(object):
         return model
 
     def buildModel_U_net_5block(self, pre_trained_weights: str = None):
+        drop_out_factor = 0.5
         inputs = Input((self.img_rows, self.img_cols, 3))
         # =========================================================================
         block1 = Convolution2D(filters=64, kernel_size=3, activation='relu', padding='same',
                                kernel_initializer='he_normal')(inputs)
         block1 = Convolution2D(filters=64, kernel_size=3, activation='relu', padding='same',
                                kernel_initializer='he_normal')(block1)
+        block1 = BatchNormalization()(block1)
         pool1 = MaxPooling2D(pool_size=(2, 2))(block1)
         # =========================================================================
         block2 = Convolution2D(filters=128, kernel_size=3, activation='relu', padding='same',
                                kernel_initializer='he_normal')(pool1)
         block2 = Convolution2D(filters=128, kernel_size=3, activation='relu', padding='same',
                                kernel_initializer='he_normal')(block2)
-        drop2 = Dropout(0.5)(block2)
+        block2 = BatchNormalization()(block2)
+        drop2 = Dropout(drop_out_factor)(block2)
         pool2 = MaxPooling2D(pool_size=(2, 2))(drop2)
         # =========================================================================
         block3 = Convolution2D(filters=256, kernel_size=3, activation='relu', padding='same',
                                kernel_initializer='he_normal')(pool2)
         block3 = Convolution2D(filters=256, kernel_size=3, activation='relu', padding='same',
                                kernel_initializer='he_normal')(block3)
-        drop3 = Dropout(0.5)(block3)
+        block3 = BatchNormalization()(block3)
+        drop3 = Dropout(drop_out_factor)(block3)
         up_samp3 = UpSampling2D(size=(2, 2))(drop3)
         up_conv3 = Convolution2D(filters=128, kernel_size=2, activation='relu', padding='same',
                                  kernel_initializer='he_normal')(up_samp3)
@@ -282,6 +290,7 @@ class EggCountNet(object):
                                kernel_initializer='he_normal')(up3)
         block8 = Convolution2D(filters=128, kernel_size=3, activation='relu', padding='same',
                                kernel_initializer='he_normal')(block8)
+        block8 = BatchNormalization()(block8)
         up_samp8 = UpSampling2D(size=(2, 2))(block8)
         up_conv8 = Convolution2D(filters=64, kernel_size=2, activation='relu', padding='same',
                                  kernel_initializer='he_normal')(up_samp8)
@@ -291,6 +300,7 @@ class EggCountNet(object):
                                kernel_initializer='he_normal')(up8)
         block9 = Convolution2D(filters=64, kernel_size=3, activation='relu', padding='same',
                                kernel_initializer='he_normal')(block9)  # (480, 640, 64)
+        block9 = BatchNormalization()(block9)
         # =========================================================================
         density_pred = Convolution2D(filters=1, kernel_size=1, activation='relu', padding='same',
                                      kernel_initializer='he_normal', use_bias=True)(block9)
@@ -329,18 +339,21 @@ class EggCountNet(object):
         # model.summary()
 
         def scheduler(epoch):
-            lr_init = 1e-8
+            lr_init = 1e-4
             ep_switch = 5
+            # return lr_init / (np.power(10, epoch/2))
             if epoch < ep_switch:
                 return lr_init
             else:
-                return lr_init * np.power(0.9, ep_switch - epoch)
+                return lr_init * np.power(0.9, epoch - ep_switch)
 
         model_learning_rate = LearningRateScheduler(scheduler, verbose=1)
         model_checkpoint = ModelCheckpoint(model_file, monitor='loss', verbose=1, save_best_only=True)
         print('Fitting model...')
 
         # batch_size limited to 1 due to my own GPU's memory limitations
+        # log_dir = "logs/fit/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+        # tensorboard_callback = TensorBoard(log_dir=log_dir, histogram_freq=1)
         history = model.fit(X_train, Y_train, batch_size=1, validation_split=0.2, epochs=50, verbose=1,
                             shuffle=True, callbacks=[model_checkpoint, model_learning_rate])
 
@@ -366,8 +379,11 @@ class EggCountNet(object):
         img = img[np.newaxis, ...]
         y_pred = model.predict(img)
         heat_pred = np.sum(y_pred[i])
+        egg_density = 100
+        if model_file == "model_unet9_binary.h5":
+            egg_density = 1
         print('Heat predicted:\t' + str(heat_pred))
-        eggs_pred = int(np.round(heat_pred / 100))
+        eggs_pred = int(np.round(heat_pred / egg_density))
         print('Predicted number of eggs:\t' + str(eggs_pred))
         print('-' * 30)
 
@@ -379,22 +395,26 @@ class EggCountNet(object):
             exit()
         X_train, Y_train = load_train_data()
         Y_pred = model.predict(X_train, batch_size=1, verbose=1)
+        egg_density = 100
+        if model_file == "model_unet9_binary.h5":
+            egg_density = 1
 
         for i in range(Y_pred.shape[0]):
             heat_pred = np.sum(Y_pred[i])
             print('Heat predicted:\t' + str(heat_pred))
-            eggs_pred = int(np.round(heat_pred / 100))
+            eggs_pred = int(np.round(heat_pred / egg_density))
             print('Predicted number of eggs:\t' + str(eggs_pred))
-            ground_truth = int(np.round(np.sum(Y_train[i]) / 100))
+            ground_truth = int(np.round(np.sum(Y_train[i]) / egg_density))
             print('Actual number of eggs:\t' + str(ground_truth))
             error = eggs_pred - ground_truth
+            heat_map(X_train[i], Y_pred[i])
             print('Error:\t' + str(error))
             print('-' * 30)
 
 
 if __name__ == '__main__':
     eggstimator = EggCountNet()
-    model_file = 'model_unet9.h5'
+    model_file = 'model_unet5.h5'
     eggstimator.train(model_file)
     # eggstimator.validate(model_file)
     # eggstimator.predict(model_file)
