@@ -20,7 +20,6 @@ from data import *
 
 
 # TODO:
-#     - solve OOM: assign weights to CPU?
 #     - load model properly in predict - get last loss
 #     -
 
@@ -69,6 +68,11 @@ def conv_bn_relu_x2(input_layer, filters):
 
 def up_conv_bn_relu_cat(input_layer, concat_layer, filters):
     block = UpSampling2D(size=(2, 2))(input_layer)
+    # ensuring valid concat
+    if block.shape[1] != concat_layer.shape[1]:
+        block = ZeroPadding2D(((0, 1), (0, 0)))(block)
+    if block.shape[2] != concat_layer.shape[2]:
+        block = ZeroPadding2D(((0, 0), (0, 1)))(block)
     block = Convolution2D(filters=filters, kernel_size=3, use_bias=False, padding='same',
                           kernel_initializer='he_normal')(block)
     block = BatchNormalization()(block)
@@ -83,91 +87,40 @@ class EggCountNet(object):
         self.img_cols = img_cols
 
     def buildModel_U_net_9block(self, pre_trained_weights: str = None):
-        drop_out_factor = 0.5
         inputs = Input((self.img_rows, self.img_cols, 3))
         # =========================================================================
-        block1 = Convolution2D(filters=64, kernel_size=3, activation='relu', padding='same',
-                               kernel_initializer='he_normal')(inputs)
-        block1 = Convolution2D(filters=64, kernel_size=3, activation='relu', padding='same',
-                               kernel_initializer='he_normal')(block1)
-        block1 = BatchNormalization()(block1)
+        block1 = conv_bn_relu_x2(input_layer=inputs, filters=64)
+        drop1 = Dropout(0.0)(block1)
         pool1 = MaxPooling2D(pool_size=(2, 2))(block1)
         # =========================================================================
-        block2 = Convolution2D(filters=128, kernel_size=3, activation='relu', padding='same',
-                               kernel_initializer='he_normal')(pool1)
-        block2 = Convolution2D(filters=128, kernel_size=3, activation='relu', padding='same',
-                               kernel_initializer='he_normal')(block2)
-        block2 = BatchNormalization()(block2)
-        pool2 = MaxPooling2D(pool_size=(2, 2))(block2)
+        block2 = conv_bn_relu_x2(input_layer=pool1, filters=128)
+        drop2 = Dropout(0.5)(block2)
+        pool2 = MaxPooling2D(pool_size=(2, 2))(drop2)
         # =========================================================================
-        block3 = Convolution2D(filters=256, kernel_size=3, activation='relu', padding='same',
-                               kernel_initializer='he_normal')(pool2)
-        block3 = Convolution2D(filters=256, kernel_size=3, activation='relu', padding='same',
-                               kernel_initializer='he_normal')(block3)
-        block3 = BatchNormalization()(block3)
-        pool3 = MaxPooling2D(pool_size=(2, 2))(block3)
+        block3 = conv_bn_relu_x2(input_layer=pool2, filters=256)
+        drop3 = Dropout(0.3)(block3)
+        pool3 = MaxPooling2D(pool_size=(2, 2))(drop3)
         # =========================================================================
-        block4 = Convolution2D(filters=512, kernel_size=3, activation='relu', padding='same',
-                               kernel_initializer='he_normal')(pool3)
-        block4 = Convolution2D(filters=512, kernel_size=3, activation='relu', padding='same',
-                               kernel_initializer='he_normal')(block4)
-        block4 = BatchNormalization()(block4)
-        drop4 = Dropout(drop_out_factor)(block4)
+        block4 = conv_bn_relu_x2(input_layer=pool3, filters=512)
+        drop4 = Dropout(0.3)(block4)
         pool4 = MaxPooling2D(pool_size=(2, 2))(drop4)
         # =========================================================================
-        block5 = Convolution2D(filters=1024, kernel_size=3, activation='relu', padding='same',
-                               kernel_initializer='he_normal')(pool4)
-        block5 = Convolution2D(filters=1024, kernel_size=3, activation='relu', padding='same',
-                               kernel_initializer='he_normal')(block5)
-        block5 = BatchNormalization()(block5)
-        drop5 = Dropout(drop_out_factor)(block5)
-        up_samp5 = UpSampling2D(size=(2, 2))(drop5)
-        up_conv5 = Convolution2D(filters=512, kernel_size=2, activation='relu', padding='same',
-                                 kernel_initializer='he_normal')(up_samp5)
-        # up_conv5 = BatchNormalization()(up_conv5)
-        up5 = concatenate([drop4, up_conv5])  # concat: 512 + 512 = 1024
+        block5 = conv_bn_relu_x2(input_layer=pool4, filters=1024)
+        up5 = up_conv_bn_relu_cat(input_layer=block5, concat_layer=drop4, filters=512)
         # =========================================================================
-        block6 = Convolution2D(filters=512, kernel_size=3, activation='relu', padding='same',
-                               kernel_initializer='he_normal')(up5)
-        block6 = Convolution2D(filters=512, kernel_size=3, activation='relu', padding='same',
-                               kernel_initializer='he_normal')(block6)
-        block6 = BatchNormalization()(block6)
-        up_samp6 = UpSampling2D(size=(2, 2))(block6)
-        up_conv6 = Convolution2D(filters=256, kernel_size=2, activation='relu', padding='same',
-                                 kernel_initializer='he_normal')(up_samp6)
-        # up_conv6 = BatchNormalization()(up_conv6)
-        up6 = concatenate([block3, up_conv6])  # concat: 256 + 256 = 512
+        block6 = conv_bn_relu_x2(input_layer=up5, filters=512)
+        up6 = up_conv_bn_relu_cat(input_layer=block6, concat_layer=drop3, filters=256)
         # =========================================================================
-        block7 = Convolution2D(filters=256, kernel_size=3, activation='relu', padding='same',
-                               kernel_initializer='he_normal')(up6)
-        block7 = Convolution2D(filters=256, kernel_size=3, activation='relu', padding='same',
-                               kernel_initializer='he_normal')(block7)
-        block7 = BatchNormalization()(block7)
-        up_samp7 = UpSampling2D(size=(2, 2))(block7)
-        up_conv7 = Convolution2D(filters=128, kernel_size=2, activation='relu', padding='same',
-                                 kernel_initializer='he_normal')(up_samp7)
-        # up_conv7 = BatchNormalization()(up_conv7)
-        up7 = concatenate([block2, up_conv7])  # concat: 128 + 128 = 256
+        block7 = conv_bn_relu_x2(input_layer=up6, filters=256)
+        up7 = up_conv_bn_relu_cat(input_layer=block7, concat_layer=drop2, filters=128)
         # =========================================================================
-        block8 = Convolution2D(filters=128, kernel_size=3, activation='relu', padding='same',
-                               kernel_initializer='he_normal')(up7)
-        block8 = Convolution2D(filters=128, kernel_size=3, activation='relu', padding='same',
-                               kernel_initializer='he_normal')(block8)
-        block8 = BatchNormalization()(block8)
-        up_samp8 = UpSampling2D(size=(2, 2))(block8)
-        up_conv8 = Convolution2D(filters=64, kernel_size=2, activation='relu', padding='same',
-                                 kernel_initializer='he_normal')(up_samp8)
-        # up_conv8 = BatchNormalization()(up_conv8)
-        up8 = concatenate([block1, up_conv8])  # concat: 64 + 64 -> 128
+        block8 = conv_bn_relu_x2(input_layer=up7, filters=128)
+        up8 = up_conv_bn_relu_cat(input_layer=block8, concat_layer=drop1, filters=64)
         # =========================================================================
-        block9 = Convolution2D(filters=64, kernel_size=3, activation='relu', padding='same',
-                               kernel_initializer='he_normal')(up8)
-        block9 = Convolution2D(filters=64, kernel_size=3, activation='relu', padding='same',
-                               kernel_initializer='he_normal')(block9)  # (480, 640, 64)
-        block9 = BatchNormalization()(block9)
+        block9 = conv_bn_relu_x2(input_layer=up8, filters=64)
         # =========================================================================
         density_pred = Convolution2D(filters=1, kernel_size=1, activation='relu', padding='same',
-                                     kernel_initializer='he_normal', use_bias=True)(block9)
+                                     kernel_initializer='he_normal', use_bias=False)(block9)
         # =========================================================================
         model = Model(inputs=inputs, outputs=density_pred)
         optim = Adam()
@@ -184,7 +137,8 @@ class EggCountNet(object):
         pool1 = MaxPooling2D(pool_size=(2, 2))(block1)
         # =========================================================================
         block2 = conv_bn_relu_x2(input_layer=pool1, filters=128)
-        pool2 = MaxPooling2D(pool_size=(2, 2))(block2)
+        drop2 = Dropout(0.5)(block2)
+        pool2 = MaxPooling2D(pool_size=(2, 2))(drop2)
         # =========================================================================
         block3 = conv_bn_relu_x2(input_layer=pool2, filters=256)
         pool3 = MaxPooling2D(pool_size=(2, 2))(block3)
@@ -193,7 +147,8 @@ class EggCountNet(object):
         up4 = up_conv_bn_relu_cat(input_layer=block4, concat_layer=block3, filters=256)
         # =========================================================================
         block7 = conv_bn_relu_x2(input_layer=up4, filters=256)
-        up7 = up_conv_bn_relu_cat(input_layer=block7, concat_layer=block2, filters=128)
+        drop7 = Dropout(0.5)(block7)
+        up7 = up_conv_bn_relu_cat(input_layer=drop7, concat_layer=block2, filters=128)
         # =========================================================================
         block8 = conv_bn_relu_x2(input_layer=up7, filters=128)
         up8 = up_conv_bn_relu_cat(input_layer=block8, concat_layer=block1, filters=64)
@@ -212,18 +167,17 @@ class EggCountNet(object):
         return model
 
     def buildModel_U_net_5block(self, pre_trained_weights: str = None):
-        drop_out_factor = 0.5
         inputs = Input((self.img_rows, self.img_cols, 3))
         # =========================================================================
         block1 = conv_bn_relu_x2(input_layer=inputs, filters=64)
         pool1 = MaxPooling2D(pool_size=(2, 2))(block1)
         # =========================================================================
         block2 = conv_bn_relu_x2(input_layer=pool1, filters=128)
-        drop2 = Dropout(drop_out_factor)(block2)
+        drop2 = Dropout(0.5)(block2)
         pool2 = MaxPooling2D(pool_size=(2, 2))(drop2)
         # =========================================================================
         block3 = conv_bn_relu_x2(input_layer=pool2, filters=256)
-        block3 = Dropout(drop_out_factor)(block3)
+        block3 = Dropout(0.5)(block3)
         up3 = up_conv_bn_relu_cat(block3, drop2, 128)  # concat: 128+128=256
         # =========================================================================
         block4 = conv_bn_relu_x2(input_layer=up3, filters=128)
@@ -279,7 +233,7 @@ class EggCountNet(object):
         # batch_size limited to 1 due to my own GPU's memory limitations
         # log_dir = "logs/fit/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
         # tensorboard_callback = TensorBoard(log_dir=log_dir, histogram_freq=1)
-        history = model.fit(X_train, Y_train, batch_size=1, validation_split=0.2, epochs=20, verbose=1,
+        history = model.fit(X_train, Y_train, batch_size=1, validation_split=0.2, epochs=50, verbose=1,
                             shuffle=True, callbacks=[model_checkpoint, model_learning_rate])
 
         # plot loss during training
@@ -332,7 +286,7 @@ class EggCountNet(object):
 
 if __name__ == '__main__':
     eggstimator = EggCountNet()
-    model_file = 'model_unet7.h5'
+    model_file = 'model_unet9.h5'
     eggstimator.train(model_file)
     # eggstimator.validate(model_file)
     # eggstimator.predict(model_file)

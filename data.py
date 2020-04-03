@@ -19,6 +19,7 @@ import tkinter as tk
 from tkinter import filedialog
 from scipy.ndimage import gaussian_filter
 from tqdm import tqdm
+from os.path import exists
 
 cropping = False
 cropped = False
@@ -182,8 +183,9 @@ def generate_density_map(img_path: str, coor_path: str):
     density_map = np.zeros((img.shape[0], img.shape[1]), dtype=np.float32)
 
     # applying heat of 100 at location of eggs
-    for i in range(coor.shape[0]):
-        density_map[coor[i, 1], coor[i, 0]] += 100
+    if coor.size > 0:
+        for i in range(coor.shape[0]):
+            density_map[coor[i, 1], coor[i, 0]] += 100
 
     # apply Gaussian kernel to density map
     density_map = gaussian_filter(density_map, sigma=(1, 1), order=0)
@@ -532,18 +534,18 @@ def load_test_data():
     return X_test
 
 
-def generate_negative_controls(directory: str = "C:/Users/Kevin/Downloads/Imgur Album  Wallpapers 81315"):
+def generate_negative_controls(directory: str = "egg_photos/train_neg_augmented"):
     """
     Generates 480p resolution images of all images within directory
     """
     files = get_file_list(directory, ".jpg")
-    Y_empty = np.loadtxt("egg_photos/train/empty_480p_dmap.txt")
+    Y_empty = np.zeros((360, 480))
     for f in files:
         print(f)
         img = cv2.imread(f)
-        img_rescaled, rf = image_rescale(img, (640, 480))
-        cv2.imwrite(f[:-4] + "_480p" + f[-4:], img_rescaled)
-        np.savetxt(f[:-4] + "_480p_dmap.txt", Y_empty)
+        img_rescaled, rf = image_rescale(img, (480, 360))
+        cv2.imwrite(f[:-4] + "_360p" + f[-4:], img_rescaled)
+        np.savetxt(f[:-4] + "_360p_dmap.txt", Y_empty)
 
 
 def get_file_list(path: str, search_term: str):
@@ -565,29 +567,14 @@ def get_file_list(path: str, search_term: str):
     return files
 
 
-def bulk_gen_dmap():
-    """
-    ***This function was to correct a previous error in generating density map. It is of no real use now.***
-    Generates density map of all files matching search term within a folder, given that its coordinates files exists.
-    Returns:
-
-    """
-    files = get_file_list('egg_photos/train', '_480p.JPG')
-    for f in files:
-        dmap = generate_density_map(f, f[:-4] + '.txt')
-        np.savetxt(f[:-4] + '_dmap.txt', dmap)
-
-
 def bulk_down_res(incoming_resolution: str = "480p", outgoing_resolution: str = "360p"):
-    """
-
-    Args:
-        incoming_resolution:
-        outgoing_resolution:
-
-    Returns:
-
-    """
-    files = get_file_list('egg_photos/train_neg_augmented', '_' + incoming_resolution + '.JPG')
+    files = get_file_list('egg_photos/train_neg_augmented', '_' + incoming_resolution + '.jpg')
     for f in files:
         image_down_res_dmap(outgoing_resolution, f)
+
+
+def give_coor_txt():
+    files = get_file_list('egg_photos/train_neg_augmented', '_480p.jpg')
+    empty_coor = np.loadtxt('egg_photos/train_neg_augmented/empty_480p.txt')
+    for f in files:
+        np.savetxt(f[:-4]+'.txt', empty_coor)
