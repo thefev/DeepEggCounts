@@ -1,10 +1,4 @@
 log.txt
-avg_box_sizes.py
-classes.txt
-eggs.jpg
-extract_photos.py
-largest_box_size.py
-reindex_classes.py
 temp.py
 *.h5
 *.jpg

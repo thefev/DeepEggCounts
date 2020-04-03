@@ -18,6 +18,7 @@ from win32api import GetSystemMetrics
 import tkinter as tk
 from tkinter import filedialog
 from scipy.ndimage import gaussian_filter
+from tqdm import tqdm
 
 cropping = False
 cropped = False
@@ -302,25 +303,22 @@ def image_crop_and_scale(resolution: str = "480p"):
     cropped_corners = [(x_start, y_start), (x_end, y_end)]
     cropped_corners = cropped_box_shift(cropped_corners, aspect_ratio)
     image_cropped = image_rescaled[cropped_corners[0][1]:cropped_corners[1][1],
-                    cropped_corners[0][0]:cropped_corners[1][0]]
+                                   cropped_corners[0][0]:cropped_corners[1][0]]
 
     # Final downscaling to 480p format of both cropped image and coordinates for U-Net to process more easily.
     image_final_res, rf_final_res = image_rescale(image_cropped, res_tuple)
 
-    # save_path = img_path.rstrip("jpgJPG").rstrip('.')
-    # img_path_save = save_path + "_" + resolution + ".JPG"
-    # cv2.imwrite(img_path_save, image_final_res)
-
     return image_final_res
 
 
-def image_crop_scale_dmap(resolution: str = "480p"):
+def image_crop_scale_dmap(resolution: str = "480p", img_path: str = ""):
     """
     Prompts user to select an image to crop. Scales the image to the input resolution (extends smallest dimension
         between height and width to do so). Saves cropped image with the coordinates of eggs within that cropped image.
         Generates density map, and saves that too.
     Args:
-        resolution:
+        resolution:         desired resolution of final image
+        img_path:           directory path of where image is at
 
     Returns:
         img_path:           path of the original image that user selected
@@ -341,18 +339,18 @@ def image_crop_scale_dmap(resolution: str = "480p"):
     res_tuple = res[resolution]
     aspect_ratio = res_tuple[0] / res_tuple[1]
 
-    img_path = get_image_path()
-    data_path = img_path.rstrip("jpgJPG").rstrip('.') + ".txt"
+    # checks if img_path was given, if not, prompts user for path
+    if not img_path:
+        img_path = get_image_path()
+
+    data_path = img_path[:-4] + ".txt"
 
     image = cv2.imread(img_path)
     data = np.loadtxt(data_path)
     coor = yolo_to_xy(data, image.shape)
 
-    # defining dimension in pixels based on current display size during cropping
-    #   and 480p for image processing - format: (width, height)
+    # get current display size to ensure image fits within user's current screen
     p_current_display = (GetSystemMetrics(0), GetSystemMetrics(1))
-
-    # ensuring linear rescaling that fits user's window
     rf_crop_display = min(p_current_display[1] / image.shape[0], p_current_display[0] / image.shape[1])
     p_crop_display = (int(rf_crop_display * image.shape[1]), int(rf_crop_display * image.shape[0]))
     image_rescaled, rf_rescaled = image_rescale(image, p_crop_display)  # rescale to fit screen
@@ -393,17 +391,70 @@ def image_crop_scale_dmap(resolution: str = "480p"):
     # Visual check that coordinates are at correct locations
     draw_points_on_image(image_final_res.copy(), coor_final_res)
 
-    save_path = img_path.rstrip("jpgJPG").rstrip('.')
+    save_path = img_path[:-4]
     img_path_save = save_path + "_" + resolution + ".JPG"
     coor_path_save = save_path + "_" + resolution + ".txt"
-    dmap_path_save = save_path + "_" + resolution + "_dmap.JPG"
+    dmap_path_save = save_path + "_" + resolution + "_dmap.txt"
     cv2.imwrite(img_path_save, image_final_res)
     np.savetxt(coor_path_save, coor_final_res)
 
     dmap = generate_density_map(img_path_save, coor_path_save)
-    # cv2.imwrite(dmap_path_save, dmap)
     np.savetxt(dmap_path_save, dmap)
     return img_path, image_final_res, coor_final_res, dmap
+
+
+def image_down_res_dmap(resolution: str = "360p", img_path: str = ""):
+    """
+        Prompts user to select an image to crop. Downscales the image to the input resolution (extends smallest
+            dimension between height and width to do so). Saves downscaled image with the coordinates of eggs within
+            that downscaled image in (pixel_x, pixel_y) format. Generates density map, and saves that too.
+        Args:
+            resolution:         desired resolution of final image
+            img_path:           directory path of where image is at
+
+        Returns:
+            img_path:           path of the original image that user selected
+            image_final_res:    cropped image
+            coor_final_res:     coordinates of eggs within cropped image
+            dmap:               density map of cropped image
+        """
+    global cropping, cropped, x_start, y_start, x_end, y_end
+    cropping = False
+    cropped = False
+    x_start, y_start, x_end, y_end = 0, 0, 0, 0
+
+    res = {"240p": (320, 240),
+           "360p": (480, 360),
+           "480p": (640, 480),
+           "720p": (960, 720),
+           "1080p": (1440, 1080)}
+    res_tuple = res[resolution]
+
+    # checks if img_path was given, if not, prompts user for path
+    if not img_path:
+        img_path = get_image_path()
+
+    data_path = img_path[:-4] + ".txt"
+
+    image = cv2.imread(img_path)
+    coor = np.loadtxt(data_path)
+
+    img_downscaled, rf_downscale = image_rescale(image, res_tuple)
+    coor_downscaled = coor_rescale(coor, rf_downscale)
+
+    # Visual check that coordinates are at correct locations
+    draw_points_on_image(img_downscaled.copy(), coor_downscaled)
+
+    save_path = img_path[:-8]
+    img_path_save = save_path + resolution + ".JPG"
+    coor_path_save = save_path + resolution + ".txt"
+    dmap_path_save = save_path + resolution + "_dmap.txt"
+    cv2.imwrite(img_path_save, img_downscaled)
+    np.savetxt(coor_path_save, coor_downscaled)
+
+    dmap = generate_density_map(img_path_save, coor_path_save)
+    np.savetxt(dmap_path_save, dmap)
+    return img_path, img_downscaled, coor_downscaled, dmap
 
 
 def heat_map(X_img, Y_img):
@@ -418,7 +469,6 @@ def heat_map(X_img, Y_img):
     plt.imshow(X_img)
     plt.subplot(1, 2, 2)
     plt.imshow(Y_img[:, :, 0], cmap='plasma')
-    # plt.colorbar()
 
 
 def get_image_path():
@@ -448,42 +498,18 @@ def load_train_data():
         Y_train (list of images):   density maps of training images
 
     """
-    X_files = get_file_list('egg_photos/train/', "_480p.JPG")
+    X_files = get_file_list('egg_photos/train_neg_augmented/', "_360p.JPG") \
+                + get_file_list('egg_photos/train_neg_augmented/', "_360p.jpg")
     X_size = cv2.imread(X_files[0]).shape
-    # Y_size = cv2.imread(X_files[0].rstrip("jpgJPG").strip('.') + "_dmap.JPG").shape
-    Y_size = np.loadtxt(X_files[0].rstrip("jpgJPG").strip('.') + "_dmap.txt").shape
+    Y_size = np.loadtxt(X_files[0][:-4] + "_dmap.txt").shape
     X_train = np.zeros((X_files.__len__(), X_size[0], X_size[1], X_size[2]))
     Y_train = np.zeros((X_files.__len__(), Y_size[0], Y_size[1], 1))
-    for i in range(X_files.__len__()):
+    for i in tqdm(range(X_files.__len__())):
         X_train[i] = cv2.imread(X_files[i])
-        # Y_train[i, :, :, 0] = cv2.imread(X_files[i].rstrip("jpgJPG").strip('.') + "_dmap.JPG")[:, :, 0]
-        Y_train[i, :, :, 0] = np.loadtxt(X_files[i].rstrip("jpgJPG").strip('.') + "_dmap.txt")
+        Y_train[i, :, :, 0] = np.loadtxt(X_files[i][:-4] + "_dmap.txt")
 
     X_train = X_train.astype('float32')
     Y_train = Y_train.astype('float32')
-    X_train /= 255.
-    return X_train, Y_train
-
-
-def load_train_data_binary():
-    """
-    Load training images (X_train) and normalises them, as well as their density map (y_train)
-
-    Returns:
-        X_train (list of images):   training images in 480p format
-        Y_train (list of images):   density maps of training images
-
-    """
-    X_files = get_file_list('egg_photos/train/', "_480p.JPG")
-    X_size = cv2.imread(X_files[0]).shape
-    Y_size = np.loadtxt(X_files[0].rstrip("jpgJPG").strip('.') + "_ddmap.txt").shape
-    X_train = np.zeros((X_files.__len__(), X_size[0], X_size[1], X_size[2]))
-    Y_train = np.zeros((X_files.__len__(), Y_size[0], Y_size[1], 1))
-    for i in range(X_files.__len__()):
-        X_train[i] = cv2.imread(X_files[i])
-        Y_train[i, :, :, 0] = np.loadtxt(X_files[i].rstrip("jpgJPG").strip('.') + "_ddmap.txt")
-
-    X_train = X_train.astype('float32')
     X_train /= 255.
     return X_train, Y_train
 
@@ -498,7 +524,7 @@ def load_test_data():
     X_files = get_file_list('egg_photos/test/', "_480p.JPG")
     X_size = cv2.imread(X_files[0]).shape
     X_test = np.zeros((X_files.__len__(), X_size[0], X_size[1], X_size[2]))
-    for i in range(len(X_files)):
+    for i in tqdm(range(len(X_files))):
         X_test[i] = cv2.imread(X_files[i])
 
     X_test = X_test.astype('float32')
@@ -506,18 +532,18 @@ def load_test_data():
     return X_test
 
 
-def generate_data(n_img):
+def generate_negative_controls(directory: str = "C:/Users/Kevin/Downloads/Imgur Album  Wallpapers 81315"):
     """
-    Data augmentation: creates sub-images from existing images that have egg coordinates file.
-    Basically a loop... I'm lazy alright.
-    Args:
-        n_img: number of sub-images to create
-
-    Returns:
-
+    Generates 480p resolution images of all images within directory
     """
-    for i in range(n_img):
-        img_path, image, coor, dmap = image_crop_scale_dmap()
+    files = get_file_list(directory, ".jpg")
+    Y_empty = np.loadtxt("egg_photos/train/empty_480p_dmap.txt")
+    for f in files:
+        print(f)
+        img = cv2.imread(f)
+        img_rescaled, rf = image_rescale(img, (640, 480))
+        cv2.imwrite(f[:-4] + "_480p" + f[-4:], img_rescaled)
+        np.savetxt(f[:-4] + "_480p_dmap.txt", Y_empty)
 
 
 def get_file_list(path: str, search_term: str):
@@ -548,6 +574,20 @@ def bulk_gen_dmap():
     """
     files = get_file_list('egg_photos/train', '_480p.JPG')
     for f in files:
-        dmap = generate_density_map(f, f.rstrip('JPG').rstrip('.') + '.txt')
-        np.savetxt(f.rstrip('JPG').rstrip('.') + '_ddmap.txt', dmap)
-        # cv2.imwrite(f.rstrip('JPG').rstrip('.') + '_dmap.JPG', dmap)
+        dmap = generate_density_map(f, f[:-4] + '.txt')
+        np.savetxt(f[:-4] + '_dmap.txt', dmap)
+
+
+def bulk_down_res(incoming_resolution: str = "480p", outgoing_resolution: str = "360p"):
+    """
+
+    Args:
+        incoming_resolution:
+        outgoing_resolution:
+
+    Returns:
+
+    """
+    files = get_file_list('egg_photos/train_neg_augmented', '_' + incoming_resolution + '.JPG')
+    for f in files:
+        image_down_res_dmap(outgoing_resolution, f)
