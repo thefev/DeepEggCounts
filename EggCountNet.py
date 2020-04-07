@@ -198,7 +198,7 @@ class EggCountNet(object):
 
     def train(self, model_file):
         print("Loading data...")
-        X_train, Y_train = load_train_data()
+        X_train, Y_train, X_val, Y_val = load_train_val_data()
 
         print("Loading data done")
 
@@ -220,7 +220,6 @@ class EggCountNet(object):
         def scheduler(epoch):
             lr_init = 1e-4
             ep_switch = 10
-            # return lr_init / (np.power(10, epoch/2))
             if epoch < ep_switch:
                 return lr_init
             else:
@@ -233,7 +232,7 @@ class EggCountNet(object):
         # batch_size limited to 1 due to my own GPU's memory limitations
         # log_dir = "logs/fit/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
         # tensorboard_callback = TensorBoard(log_dir=log_dir, histogram_freq=1)
-        history = model.fit(X_train, Y_train, batch_size=1, validation_split=0.2, epochs=50, verbose=1,
+        history = model.fit(X_train, Y_train, batch_size=1, validation_data=(X_val, Y_val), epochs=200, verbose=1,
                             shuffle=True, callbacks=[model_checkpoint, model_learning_rate])
 
         # plot loss during training
@@ -261,26 +260,41 @@ class EggCountNet(object):
         print('Predicted number of eggs:\t' + str(eggs_pred))
         print('-' * 30)
 
-    def validate(self, model_file):
+    def validate_test(self, model_file):
         if exists(model_file):
             model = load_model(model_file)
         else:
             print("Model doesn't exist. Nothing to validate.")
             exit()
-        X_train, Y_train = load_train_data()
-        Y_pred = model.predict(X_train, batch_size=1, verbose=1)
         egg_density = 100
 
+        print('-' * 100)
+        print('Validation set:')
+        X_train, Y_train = load_train_val_data()
+        Y_pred = model.predict(X_train, batch_size=1, verbose=1)
+        err_val = 0
         for i in range(Y_pred.shape[0]):
             heat_pred = np.sum(Y_pred[i])
-            print('Heat predicted:\t' + str(heat_pred))
             eggs_pred = int(np.round(heat_pred / egg_density))
             print('Predicted number of eggs:\t' + str(eggs_pred))
             ground_truth = int(np.round(np.sum(Y_train[i]) / egg_density))
             print('Actual number of eggs:\t' + str(ground_truth))
             error = eggs_pred - ground_truth
-            heat_map(X_train[i], Y_pred[i])
+            # heat_map(X_train[i], Y_pred[i])
             print('Error:\t' + str(error))
+            err_val += np.abs(error)
+            print('-' * 30)
+        print('Total error in validation set:\t' + str(err_val))
+
+        print('-' * 100)
+        print('Test set')
+        X_test = load_test_data()
+        Y_test = model.predict(X_test, batch_size=1, verbose=1)
+        for i in range(Y_test.shape[0]):
+            heat_pred = np.sum(Y_test[i])
+            eggs_pred = int(np.round(heat_pred / egg_density))
+            heat_map(X_test[i], Y_test[i])
+            print('Predicted number of eggs:\t' + str(eggs_pred))
             print('-' * 30)
 
 
@@ -288,5 +302,5 @@ if __name__ == '__main__':
     eggstimator = EggCountNet()
     model_file = 'model_unet9.h5'
     eggstimator.train(model_file)
-    # eggstimator.validate(model_file)
+    # eggstimator.validate_test(model_file)
     # eggstimator.predict(model_file)

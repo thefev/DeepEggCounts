@@ -491,7 +491,7 @@ def get_image_path():
     return image_path
 
 
-def load_train_data():
+def load_train_val_data():
     """
     Load training images (X_train) and normalises them, as well as their density map (y_train)
 
@@ -500,20 +500,32 @@ def load_train_data():
         Y_train (list of images):   density maps of training images
 
     """
-    X_files = get_file_list('egg_photos/train_neg_augmented/', "_360p.JPG") \
-                + get_file_list('egg_photos/train_neg_augmented/', "_360p.jpg")
-    X_size = cv2.imread(X_files[0]).shape
-    Y_size = np.loadtxt(X_files[0][:-4] + "_dmap.txt").shape
-    X_train = np.zeros((X_files.__len__(), X_size[0], X_size[1], X_size[2]))
-    Y_train = np.zeros((X_files.__len__(), Y_size[0], Y_size[1], 1))
-    for i in tqdm(range(X_files.__len__())):
-        X_train[i] = cv2.imread(X_files[i])
-        Y_train[i, :, :, 0] = np.loadtxt(X_files[i][:-4] + "_dmap.txt")
+    X_train_files = get_file_list('egg_photos/train_full_mix/', "_360p.JPG") \
+                + get_file_list('egg_photos/train_full_mix/', "_360p.jpg")
+
+    X_size = cv2.imread(X_train_files[0]).shape
+    Y_size = np.loadtxt(X_train_files[0][:-4] + "_dmap.txt").shape
+    X_train = np.zeros((X_train_files.__len__(), X_size[0], X_size[1], X_size[2]))
+    Y_train = np.zeros((X_train_files.__len__(), Y_size[0], Y_size[1], 1))
+    for i in tqdm(range(X_train_files.__len__())):
+        X_train[i] = cv2.imread(X_train_files[i])
+        Y_train[i, :, :, 0] = np.loadtxt(X_train_files[i][:-4] + "_dmap.txt")
+
+    X_val_files = get_file_list('egg_photos/val_full_mix/', "_360p.JPG") \
+                  + get_file_list('egg_photos/val_full_mix/', "_360p.jpg")
+    X_val = np.zeros((X_val_files.__len__(), X_size[0], X_size[1], X_size[2]))
+    Y_val = np.zeros((X_val_files.__len__(), Y_size[0], Y_size[1], 1))
+    for i in tqdm(range(X_val_files.__len__())):
+        X_val[i] = cv2.imread(X_val_files[i])
+        Y_val[i, :, :, 0] = np.loadtxt(X_val_files[i][:-4] + "_dmap.txt")
 
     X_train = X_train.astype('float32')
     Y_train = Y_train.astype('float32')
     X_train /= 255.
-    return X_train, Y_train
+    X_val = X_val.astype('float32')
+    Y_val = Y_val.astype('float32')
+    X_val /= 255.
+    return X_train, Y_train, X_val, Y_val
 
 
 def load_test_data():
@@ -523,7 +535,7 @@ def load_test_data():
     Returns:
         X_test  (list of images):   test images
     """
-    X_files = get_file_list('egg_photos/test/', "_480p.JPG")
+    X_files = get_file_list('egg_photos/test/', "_360p.JPG") + get_file_list('egg_photos/test/', "_360p.jpg")
     X_size = cv2.imread(X_files[0]).shape
     X_test = np.zeros((X_files.__len__(), X_size[0], X_size[1], X_size[2]))
     for i in tqdm(range(len(X_files))):
@@ -568,13 +580,14 @@ def get_file_list(path: str, search_term: str):
 
 
 def bulk_down_res(incoming_resolution: str = "480p", outgoing_resolution: str = "360p"):
-    files = get_file_list('egg_photos/train_neg_augmented', '_' + incoming_resolution + '.jpg')
+    files = get_file_list('egg_photos/test', '_' + incoming_resolution + '.JPG')
     for f in files:
-        image_down_res_dmap(outgoing_resolution, f)
+        img, rf = image_rescale(cv2.imread(f), (480, 360))
+        cv2.imwrite(f[:-8] + outgoing_resolution + f[-4:], img)
 
 
-def give_coor_txt():
-    files = get_file_list('egg_photos/train_neg_augmented', '_480p.jpg')
-    empty_coor = np.loadtxt('egg_photos/train_neg_augmented/empty_480p.txt')
+def bulk_gen_dmap():
+    files = get_file_list('egg_photos/test', '_360p.JPG')
     for f in files:
-        np.savetxt(f[:-4]+'.txt', empty_coor)
+        dmap = generate_density_map(f, f[:-3] + 'txt')
+        np.savetxt(f[:-4]+'_dmap.txt', dmap)
