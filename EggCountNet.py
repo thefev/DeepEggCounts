@@ -12,6 +12,7 @@ import datetime
 import numpy as np
 import matplotlib.pyplot as plt
 from os.path import exists
+from keras import backend as K
 from keras.callbacks import ModelCheckpoint, LearningRateScheduler, TensorBoard
 from keras.models import Model, load_model
 from keras.layers import *
@@ -21,12 +22,9 @@ from data import *
 
 # TODO:
 #     - load model properly in predict - get last loss
-#     -
+#     - envelope network with UI
 
 def get_model_memory_usage(batch_size, model):
-    import numpy as np
-    from keras import backend as K
-
     shapes_mem_count = 0
     internal_model_mem_count = 0
     for l in model.layers:
@@ -55,6 +53,15 @@ def get_model_memory_usage(batch_size, model):
 
 
 def conv_bn_relu_x2(input_layer, filters):
+    """
+    Applies Conv2D, Batch normalization, and RELU activation twice to input layer
+    Args:
+        input_layer:    input layer
+        filters:        number of filters in conv2d layers
+
+    Returns:
+        block:          output after being processed
+    """
     block = Convolution2D(filters=filters, kernel_size=3, use_bias=False, padding='same',
                           kernel_initializer='he_normal')(input_layer)
     block = BatchNormalization()(block)
@@ -67,6 +74,16 @@ def conv_bn_relu_x2(input_layer, filters):
 
 
 def up_conv_bn_relu_cat(input_layer, concat_layer, filters):
+    """
+    Up-samples input layer, applies conv2d, batch norm., and RELU activation.
+    Args:
+        input_layer:
+        concat_layer:
+        filters:
+
+    Returns:
+
+    """
     block = UpSampling2D(size=(2, 2))(input_layer)
     # ensuring valid concat
     if block.shape[1] != concat_layer.shape[1]:
@@ -80,6 +97,86 @@ def up_conv_bn_relu_cat(input_layer, concat_layer, filters):
     block = concatenate([concat_layer, block])
     return block
 
+
+def validate_test(model_file: str = 'model_unet9.h5'):
+    if exists(model_file):
+        model = load_model(model_file)
+    else:
+        print("Model doesn't exist. Nothing to validate.")
+        exit()
+    egg_density = 100
+
+    print('-' * 100)
+    print('Train and Validation set:')
+    X_train, Y_train, X_val, Y_val = load_train_val_data()
+    Y_pred_train = model.predict(X_train, batch_size=1, verbose=1)
+    Y_pred_val = model.predict(X_val, batch_size=1, verbose=1)
+    err_train = 0
+    err_val = 0
+    for i in range(Y_pred_train.shape[0]):
+        heat_pred = np.sum(Y_pred_train[i])
+        eggs_pred = int(np.round(heat_pred / egg_density))
+        print('Predicted number of eggs:\t' + str(eggs_pred))
+        ground_truth = int(np.round(np.sum(Y_train[i]) / egg_density))
+        print('Actual number of eggs:\t' + str(ground_truth))
+        error = eggs_pred - ground_truth
+        # heat_map(X_train[i], Y_pred[i])
+        print('Error:\t' + str(error) + ' (' + f'{catch_div_by_zero(error, ground_truth)*100:.2f}' + '%)')
+        err_train += np.abs(error)
+        print('-' * 30)
+    print('Total error in train set:\t' + str(err_train))
+
+    print('-' * 100)
+    for i in range(Y_pred_val.shape[0]):
+        heat_pred = np.sum(Y_pred_val[i])
+        eggs_pred = int(np.round(heat_pred / egg_density))
+        print('Predicted number of eggs:\t' + str(eggs_pred))
+        ground_truth = int(np.round(np.sum(Y_val[i]) / egg_density))
+        print('Actual number of eggs:\t' + str(ground_truth))
+        error = eggs_pred - ground_truth
+        heat_map(X_val[i], Y_pred_val[i])
+        print('Error:\t' + str(error) + ' (' + f'{catch_div_by_zero(error, ground_truth)*100:.2f}' + '%)')
+        err_val += np.abs(error)
+        print('-' * 30)
+    print('Total error in validation set:\t' + str(err_val))
+
+
+    # print('-' * 100)
+    # print('Test set')
+    # X_test = load_test_data()
+    # Y_test = model.predict(X_test, batch_size=1, verbose=1)
+    # for i in range(Y_test.shape[0]):
+    #     heat_pred = np.sum(Y_test[i])
+    #     eggs_pred = int(np.round(heat_pred / egg_density))
+    #     print('Predicted number of eggs:\t' + str(eggs_pred))
+    #     # ground_truth = int(np.round(np.sum(Y_test[i]) / egg_density))
+    #     # print('Actual number of eggs:\t' + str(ground_truth))
+    #     # error = eggs_pred - ground_truth
+    #     heat_map(X_test[i], Y_test[i])
+    #     # print('Error:\t' + str(error) + ' (' + f'{catch_div_by_zero(error, ground_truth)*100:.2f}' + '%)')
+    #     # err_val += np.abs(error)
+    #     print('-' * 30)
+
+
+def predict_input(model_file: str = 'model_unet9.h5'):
+    if exists(model_file):
+        model = load_model(model_file)
+    else:
+        print("Model doesn't exist. Nothing to validate.")
+        exit()
+    img = image_crop_and_scale()
+    img = img[np.newaxis, ...]
+    y_pred = model.predict(img)
+    heat_pred = np.sum(y_pred[i])
+    egg_density = 100
+    print('Heat predicted:\t' + str(heat_pred))
+    eggs_pred = int(np.round(heat_pred / egg_density))
+    print('Predicted number of eggs:\t' + str(eggs_pred))
+    print('-' * 30)
+
+
+def catch_div_by_zero(n, d):
+    return 0 if d == 0 else n / d
 
 class EggCountNet(object):
     def __init__(self, img_rows=360, img_cols=480):
@@ -223,7 +320,7 @@ class EggCountNet(object):
             if epoch < ep_switch:
                 return lr_init
             else:
-                return lr_init * np.power(0.9, epoch - ep_switch)
+                return lr_init * np.power(0.95, epoch - ep_switch)
 
         model_learning_rate = LearningRateScheduler(scheduler, verbose=1)
         model_checkpoint = ModelCheckpoint(model_file, monitor='loss', verbose=1, save_best_only=True)
@@ -242,65 +339,12 @@ class EggCountNet(object):
         plt.legend()
         plt.show()
 
-        self.validate(model_file)
-
-    def predict(self, model_file):
-        if exists(model_file):
-            model = load_model(model_file)
-        else:
-            print("Model doesn't exist. Nothing to validate.")
-            exit()
-        img = image_crop_and_scale()
-        img = img[np.newaxis, ...]
-        y_pred = model.predict(img)
-        heat_pred = np.sum(y_pred[i])
-        egg_density = 100
-        print('Heat predicted:\t' + str(heat_pred))
-        eggs_pred = int(np.round(heat_pred / egg_density))
-        print('Predicted number of eggs:\t' + str(eggs_pred))
-        print('-' * 30)
-
-    def validate_test(self, model_file):
-        if exists(model_file):
-            model = load_model(model_file)
-        else:
-            print("Model doesn't exist. Nothing to validate.")
-            exit()
-        egg_density = 100
-
-        print('-' * 100)
-        print('Validation set:')
-        X_train, Y_train = load_train_val_data()
-        Y_pred = model.predict(X_train, batch_size=1, verbose=1)
-        err_val = 0
-        for i in range(Y_pred.shape[0]):
-            heat_pred = np.sum(Y_pred[i])
-            eggs_pred = int(np.round(heat_pred / egg_density))
-            print('Predicted number of eggs:\t' + str(eggs_pred))
-            ground_truth = int(np.round(np.sum(Y_train[i]) / egg_density))
-            print('Actual number of eggs:\t' + str(ground_truth))
-            error = eggs_pred - ground_truth
-            # heat_map(X_train[i], Y_pred[i])
-            print('Error:\t' + str(error))
-            err_val += np.abs(error)
-            print('-' * 30)
-        print('Total error in validation set:\t' + str(err_val))
-
-        print('-' * 100)
-        print('Test set')
-        X_test = load_test_data()
-        Y_test = model.predict(X_test, batch_size=1, verbose=1)
-        for i in range(Y_test.shape[0]):
-            heat_pred = np.sum(Y_test[i])
-            eggs_pred = int(np.round(heat_pred / egg_density))
-            heat_map(X_test[i], Y_test[i])
-            print('Predicted number of eggs:\t' + str(eggs_pred))
-            print('-' * 30)
+        validate_test(model_file)
 
 
 if __name__ == '__main__':
     eggstimator = EggCountNet()
     model_file = 'model_unet9.h5'
-    eggstimator.train(model_file)
-    # eggstimator.validate_test(model_file)
-    # eggstimator.predict(model_file)
+    # eggstimator.train(model_file)
+    validate_test(model_file)
+    # predict_input(model_file)
