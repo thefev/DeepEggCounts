@@ -8,6 +8,7 @@
       <w>optim</w>
       <w>pred</w>
       <w>relu</w>
+      <w>resc</w>
       <w>samp</w>
       <w>tensorboard</w>
       <w>unet</w>

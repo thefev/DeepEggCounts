@@ -140,7 +140,6 @@ def validate_test(model_file: str = 'model_unet9.h5'):
         print('-' * 30)
     print('Total error in validation set:\t' + str(err_val))
 
-
     # print('-' * 100)
     # print('Test set')
     # X_test = load_test_data()
@@ -177,6 +176,7 @@ def predict_input(model_file: str = 'model_unet9.h5'):
 
 def catch_div_by_zero(n, d):
     return 0 if d == 0 else n / d
+
 
 class EggCountNet(object):
     def __init__(self, img_rows=360, img_cols=480):
@@ -345,6 +345,6 @@ class EggCountNet(object):
 if __name__ == '__main__':
     eggstimator = EggCountNet()
     model_file = 'model_unet9.h5'
-    # eggstimator.train(model_file)
-    validate_test(model_file)
+    eggstimator.train(model_file)
+    # validate_test(model_file)
     # predict_input(model_file)

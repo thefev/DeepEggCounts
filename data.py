@@ -21,6 +21,16 @@ from scipy.ndimage import gaussian_filter
 from tqdm import tqdm
 from os.path import exists
 
+# TODO: - change load_data methods to take/request directory input and search term (maybe train:val ratio too)
+#       - divide and conquer approach - split input image into multiple sub-images - # of sub-img based on output dim
+#           - get Region of Interest? - no/minimal down-res, split image into multiple sub-images
+#               - recycle cropping methods, re-write to get region w.r.t. org image
+
+res = {"240p": (320, 240),
+       "360p": (480, 360),
+       "480p": (640, 480),
+       "720p": (960, 720),
+       "1080p": (1440, 1080)}
 cropping = False
 cropped = False
 x_start, y_start, x_end, y_end = 0, 0, 0, 0
@@ -57,7 +67,7 @@ def mouse_crop(event, x, y, flags, param):
             cropped = True
 
 
-def yolo_to_xy(yolo_txt, img_dim):
+def yolo_to_xy(yolo_txt, img_dim: tuple):
     """
     Takes in coordinates in YOLO format. Converts to raw pixel # format
 
@@ -77,18 +87,18 @@ def yolo_to_xy(yolo_txt, img_dim):
     return coor_format
 
 
-def image_rescale(img, final_dim):
+def image_rescale(img, final_dim: tuple):
     """
     Takes in image and desired final dimensions. Returns rescaled image and the
     rescale factor for further calculations.
 
     Args:
-        img:        input image to be rescaled
-        final_dim:  final dimensions of image (width, height)
+        img (ndarray):              input image to be rescaled
+        final_dim (tuple of int):   final dimensions of image (width, height)
 
     Returns:
-        img_rescaled
-        rescale_factor:     rescale factor (r_f_x, r_f_y)
+        img_rescaled (ndarray):             rescaled image
+        rescale_factor (tuple of float):    rescale factor (r_f_x, r_f_y)
     """
     rescale_factor = (final_dim[0] / img.shape[1], final_dim[1] / img.shape[0])
     img_rescaled = cv2.resize(img, final_dim)
@@ -251,9 +261,9 @@ def cropped_box_shift(corners, desired_aspect_ratio):
     return adjusted_corners
 
 
-def image_crop_and_scale(resolution: str = "480p"):
+def image_crop_and_scale(resolution: str = "360p"):
     """
-    Prompts user to crop image in the section in which eggs exist. Unless specified, crops to 640x480p. Saves cropped
+    Prompts user to crop image in the section in which eggs exist. Unless specified, crops to 360p. Saves cropped
     image as .JPG
 
     Args:
@@ -267,45 +277,46 @@ def image_crop_and_scale(resolution: str = "480p"):
     cropped = False
     x_start, y_start, x_end, y_end = 0, 0, 0, 0
 
-    res = {"240p": (320, 240),
-           "360p": (480, 360),
-           "480p": (640, 480),
-           "720p": (960, 720),
-           "1080p": (1440, 1080)}
     res_tuple = res[resolution]
     aspect_ratio = res_tuple[0] / res_tuple[1]
 
     img_path = get_image_path()
     image = cv2.imread(img_path)
+    # check if image height > image width - if so, rotate
+    if image.shape[0] > image.shape[1]:
+        image = np.rot90(image)
 
     # retrieving current display size to ensure it fits the screen during cropping and by inputted resolution for
     # image processing - format: (width, height)
     p_current_display = (GetSystemMetrics(0), GetSystemMetrics(1))
 
-    # ensuring linear rescaling that fits user's window
+    # determining rescale factor to fit image in screen while preserving aspect ratio of image
     rf_crop_display = min(p_current_display[1] / image.shape[0], p_current_display[0] / image.shape[1])
+    # calculating the image dimensions in pixels which will fit on screen
     p_crop_display = (int(rf_crop_display * image.shape[1]), int(rf_crop_display * image.shape[0]))
-    image_rescaled, rf_rescaled = image_rescale(image, p_crop_display)  # rescale to fit screen
+    # gets a rescaled image which will fit on user's screen
+    image_fit_screen, rf_fit_screen = image_rescale(image, p_crop_display)
 
+    # generates a window in which the user is prompted to crop out the section they want analysed
     cv2.namedWindow("image")
     cv2.setMouseCallback("image", mouse_crop)
     while not cropped:
-        image_copy = image_rescaled.copy()
+        image_copy = image_fit_screen.copy()
         if not cropping:
-            cv2.imshow("image", image_rescaled)
+            cv2.imshow("image", image_fit_screen)
         elif cropping:
             cv2.rectangle(image_copy, (x_start, y_start), (x_end, y_end), (255, 0, 0), 2)
             cv2.imshow("image", image_copy)
-        cv2.waitKey(1)
-    # close all open windows
+        cv2.waitKey(1) & 0xFF
     cv2.destroyAllWindows()
 
-    # Grabs coordinates of cropped image corners, creates cropped image, and creates shifts coordinates to cropped image
-    # space.
+    # grabs coordinates of cropped image corners
     cropped_corners = [(x_start, y_start), (x_end, y_end)]
+    # shifts coordinates of the eggs to new image's coordinate space
     cropped_corners = cropped_box_shift(cropped_corners, aspect_ratio)
-    image_cropped = image_rescaled[cropped_corners[0][1]:cropped_corners[1][1],
-                                   cropped_corners[0][0]:cropped_corners[1][0]]
+    # creates cropped image
+    image_cropped = image_fit_screen[cropped_corners[0][1]:cropped_corners[1][1],
+                    cropped_corners[0][0]:cropped_corners[1][0]]
 
     # Final downscaling to 480p format of both cropped image and coordinates for U-Net to process more easily.
     image_final_res, rf_final_res = image_rescale(image_cropped, res_tuple)
@@ -333,11 +344,6 @@ def image_crop_scale_dmap(resolution: str = "480p", img_path: str = ""):
     cropped = False
     x_start, y_start, x_end, y_end = 0, 0, 0, 0
 
-    res = {"240p": (320, 240),
-           "360p": (480, 360),
-           "480p": (640, 480),
-           "720p": (960, 720),
-           "1080p": (1440, 1080)}
     res_tuple = res[resolution]
     aspect_ratio = res_tuple[0] / res_tuple[1]
 
@@ -377,7 +383,7 @@ def image_crop_scale_dmap(resolution: str = "480p", img_path: str = ""):
     cropped_corners = cropped_box_shift(cropped_corners, aspect_ratio)
     [(x_start, y_start), (x_end, y_end)] = cropped_corners
     image_cropped = image_rescaled[cropped_corners[0][1]:cropped_corners[1][1],
-                                   cropped_corners[0][0]:cropped_corners[1][0]]
+                    cropped_corners[0][0]:cropped_corners[1][0]]
     coor_cropped = coor_crop_shift(coor_rescaled, cropped_corners)
 
     # sanity check: ensuring all coordinates are within bounds of cropped image space
@@ -425,11 +431,6 @@ def image_down_res_dmap(resolution: str = "360p", img_path: str = ""):
     cropped = False
     x_start, y_start, x_end, y_end = 0, 0, 0, 0
 
-    res = {"240p": (320, 240),
-           "360p": (480, 360),
-           "480p": (640, 480),
-           "720p": (960, 720),
-           "1080p": (1440, 1080)}
     res_tuple = res[resolution]
 
     # checks if img_path was given, if not, prompts user for path
@@ -459,18 +460,23 @@ def image_down_res_dmap(resolution: str = "360p", img_path: str = ""):
     return img_path, img_downscaled, coor_downscaled, dmap
 
 
-def heat_map(X_img, Y_img):
+def heat_map(x_img, y_img):
     """
     Sanity check to visually determine whether an image's density map matches up with ground truth.
+
     Args:
-        X_img:  normal image of eggs
-        Y_img:  density map
+        x_img:  normal image of eggs
+        y_img:  density map
+
+    Returns:
+        None
     """
     plt.figure()
     plt.subplot(1, 2, 1)
-    plt.imshow(X_img)
+    plt.imshow(x_img)
     plt.subplot(1, 2, 2)
-    plt.imshow(Y_img[:, :, 0], cmap='plasma')
+    plt.imshow(y_img[:, :, 0], cmap='plasma')
+    return None
 
 
 def get_image_path():
@@ -500,8 +506,8 @@ def load_train_val_data():
         Y_train (list of images):   density maps of training images
 
     """
-    X_train_files = get_file_list('egg_photos/train_full_mix/', "_360p.JPG") \
-                + get_file_list('egg_photos/train_full_mix/', "_360p.jpg")
+    X_train_files = get_file_list('egg_photos/full_image_only/train', "_360p.JPG") \
+                    + get_file_list('egg_photos/full_image_only/train', "_360p.jpg")
 
     X_size = cv2.imread(X_train_files[0]).shape
     Y_size = np.loadtxt(X_train_files[0][:-4] + "_dmap.txt").shape
@@ -511,8 +517,8 @@ def load_train_val_data():
         X_train[i] = cv2.imread(X_train_files[i])
         Y_train[i, :, :, 0] = np.loadtxt(X_train_files[i][:-4] + "_dmap.txt")
 
-    X_val_files = get_file_list('egg_photos/val_full_mix/', "_360p.JPG") \
-                  + get_file_list('egg_photos/val_full_mix/', "_360p.jpg")
+    X_val_files = get_file_list('egg_photos/full_image_only/val', "_360p.JPG") \
+                  + get_file_list('egg_photos/full_image_only/val', "_360p.jpg")
     X_val = np.zeros((X_val_files.__len__(), X_size[0], X_size[1], X_size[2]))
     Y_val = np.zeros((X_val_files.__len__(), Y_size[0], Y_size[1], 1))
     for i in tqdm(range(X_val_files.__len__())):
@@ -546,20 +552,6 @@ def load_test_data():
     return X_test
 
 
-def generate_negative_controls(directory: str = "egg_photos/train_neg_augmented"):
-    """
-    Generates 480p resolution images of all images within directory
-    """
-    files = get_file_list(directory, ".jpg")
-    Y_empty = np.zeros((360, 480))
-    for f in files:
-        print(f)
-        img = cv2.imread(f)
-        img_rescaled, rf = image_rescale(img, (480, 360))
-        cv2.imwrite(f[:-4] + "_360p" + f[-4:], img_rescaled)
-        np.savetxt(f[:-4] + "_360p_dmap.txt", Y_empty)
-
-
 def get_file_list(path: str, search_term: str):
     """
     Returns a list of files that matches search term within the directory provided.
@@ -579,15 +571,61 @@ def get_file_list(path: str, search_term: str):
     return files
 
 
-def bulk_down_res(incoming_resolution: str = "480p", outgoing_resolution: str = "360p"):
-    files = get_file_list('egg_photos/test', '_' + incoming_resolution + '.JPG')
+def bulk_down_res(incoming_resolution: str = "", outgoing_resolution: str = "360p"):
+    files = get_file_list('egg_photos/drive-download-20200416T113445Z-001/all', incoming_resolution + '.JPG')
     for f in files:
-        img, rf = image_rescale(cv2.imread(f), (480, 360))
-        cv2.imwrite(f[:-8] + outgoing_resolution + f[-4:], img)
+        img, rf = image_rescale(cv2.imread(f), res[outgoing_resolution])
+        cv2.imwrite(f[:-4] + "_" + outgoing_resolution + f[-4:], img)
 
 
 def bulk_gen_dmap():
     files = get_file_list('egg_photos/test', '_360p.JPG')
     for f in files:
         dmap = generate_density_map(f, f[:-3] + 'txt')
-        np.savetxt(f[:-4]+'_dmap.txt', dmap)
+        np.savetxt(f[:-4] + '_dmap.txt', dmap)
+
+
+def split_image(image, resolution: str = "360p"):
+    """
+    Takes in larger image and converts it to multiple sub-image with minimal resolution loss.
+    Args:
+        image (ndarray):        input image to be broken down (h, w, 3)
+        resolution (str):       desired output sub-image resolution, default: "360p" = (480, 360)
+
+    Returns:
+        sub_images (ndarray):   ndarray of shape (# sub-images, (resolution), 3)
+    """
+    img_dim = image.shape  # (h, w, 3)
+    res_dim = res[resolution]  # (w, h)
+
+    # determining which sub-image orientation will yield minimal pixel lost in re-scaling
+    n_img_h_by_res_w = int(np.floor(img_dim[0] / res_dim[0]))   # times sub-image width can fit in image's height
+    n_img_w_by_res_h = int(np.floor(img_dim[1] / res_dim[1]))   # times sub-image height can fit in image's width
+    n_img_h_by_res_h = int(np.floor(img_dim[0] / res_dim[1]))   # times sub-image height can fit in image's height
+    n_img_w_by_res_w = int(np.floor(img_dim[1] / res_dim[0]))   # times sub-image width can fit in image's width
+    n_sub_img_hw_wh = n_img_h_by_res_w * n_img_w_by_res_h       # number of sub-images if image is split by h/w & w/h
+    n_sub_img_hw_hw = n_img_h_by_res_h * n_img_w_by_res_w       # number of sub-images if image is split by h/h & w/w
+    if n_sub_img_hw_hw >= n_sub_img_hw_wh:  # choosing method which will yield minimal information loss
+        if n_sub_img_hw_hw <= 1:  # image cannot be broken down further
+            sub_images, = image_rescale(image, res_dim)
+            print("Image was re-scaled, but could not be broken down into sub-images.")
+        else:
+            sub_images = np.zeros(shape=(n_sub_img_hw_hw, res_dim[1], res_dim[0], 3), dtype="uint8")
+            img_resc, _ = image_rescale(image, (res_dim[0] * n_img_w_by_res_w, res_dim[1] * n_img_h_by_res_h))
+            for i in range(n_img_h_by_res_h):
+                for j in range(n_img_w_by_res_w):
+                    sub_images[i * n_img_w_by_res_w + j] = img_resc[i * res_dim[1]:(i + 1) * res_dim[1],
+                                                                    j * res_dim[0]:(j + 1) * res_dim[0]]
+    else:
+        if n_sub_img_hw_wh <= 1:  # image cannot be broken down further
+            sub_images = image_rescale(image, res_dim)
+            print("Image was re-scaled, but could not be broken down into sub-images.")
+        else:
+            sub_images = np.zeros(shape=(n_sub_img_hw_wh, res_dim[1], res_dim[0], 3), dtype="uint8")
+            img_resc, _ = image_rescale(image, (res_dim[1] * n_img_w_by_res_h, res_dim[0] * n_img_h_by_res_w))
+            img_resc = np.rot90(img_resc)   # rotate image to adjust to the h/w image misalignment
+            for i in range(n_img_h_by_res_w):   # width
+                for j in range(n_img_w_by_res_h):   # height
+                    sub_images[i * n_img_w_by_res_h + j] = img_resc[j * res_dim[1]:(j + 1) * res_dim[1],
+                                                                    i * res_dim[0]:(i + 1) * res_dim[0]]
+    return sub_images
