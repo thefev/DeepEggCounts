@@ -4,13 +4,16 @@
       <w>conv</w>
       <w>coor</w>
       <w>dmap</w>
+      <w>dmaps</w>
       <w>eggstimator</w>
+      <w>imgs</w>
       <w>optim</w>
       <w>pred</w>
       <w>relu</w>
       <w>resc</w>
       <w>samp</w>
       <w>tensorboard</w>
+      <w>uint</w>
       <w>unet</w>
       <w>yolo</w>
       <w>yost</w>

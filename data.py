@@ -22,9 +22,10 @@ from tqdm import tqdm
 from os.path import exists
 
 # TODO: - change load_data methods to take/request directory input and search term (maybe train:val ratio too)
-#       - divide and conquer approach - split input image into multiple sub-images - # of sub-img based on output dim
-#           - get Region of Interest? - no/minimal down-res, split image into multiple sub-images
-#               - recycle cropping methods, re-write to get region w.r.t. org image
+#       - divide and conquer approach
+#           - adjust data loading to cope with splitting image
+#               - load full images, split into sub-images with corresponding coor and dmap - do on the fly, no saving
+#               - rescale to 1/9th of full image leaves sufficient details for human eye ~ about the Baysian limit
 
 res = {"240p": (320, 240),
        "360p": (480, 360),
@@ -72,12 +73,12 @@ def yolo_to_xy(yolo_txt, img_dim: tuple):
     Takes in coordinates in YOLO format. Converts to raw pixel # format
 
     Arg:
-        yolo_txt:   data in YOLO format (class, x, y, w, h) format
-                    *** x, y, w, h are all expressed as percentages
-        img_dim:    img shape (y_len, x_len)
+        yolo_txt (ndarray):     data in YOLO format (class, x, y, w, h) format
+                                *** x, y, w, h are all expressed as percentages
+        img_dim (tuple):        img shape (y_len, x_len)
 
     Returns:
-        coor_format:       np array of coordinates of eggs (x, y)
+        coor_format (ndarray of int):   np array of coordinates of eggs (x, y)
     """
     coor_format = yolo_txt[:, 1:3]  # extract (x, y) coordinate info
     coor_format = coor_format * (-1) + 1  # 180 degree rotation
@@ -129,11 +130,11 @@ def coor_crop_shift(original_coordinates, cropped_image_corners):
     image space.
 
     Args:
-        original_coordinates:   egg coordinates of original image (x, y)
-        cropped_image_corners:  cropped image coordinates [(x_start, y_start), (x_end, y_end)]
+        original_coordinates (ndarray):             egg coordinates of original image (x, y)
+        cropped_image_corners (array of tuples):    cropped image coordinates [(x_start, y_start), (x_end, y_end)]
 
     Returns:
-        cropped_coordinates:    coordinates in cropped image space (x, y)
+        cropped_coordinates (ndarray):              coordinates in cropped image space (x, y)
     """
     cropped_coordinates = np.zeros([0, 2])
     min_x = min(cropped_image_corners[0][0], cropped_image_corners[1][0])
@@ -141,7 +142,7 @@ def coor_crop_shift(original_coordinates, cropped_image_corners):
     min_y = min(cropped_image_corners[0][1], cropped_image_corners[1][1])
     max_y = max(cropped_image_corners[0][1], cropped_image_corners[1][1])
     for i in range(original_coordinates.shape[0]):
-        if min_x <= original_coordinates[i, 0] <= max_x and min_y <= original_coordinates[i, 1] <= max_y:
+        if min_x <= original_coordinates[i, 0] < max_x and min_y < original_coordinates[i, 1] <= max_y:
             cropped_coordinates = np.append(cropped_coordinates, [[original_coordinates[i, 0] - min_x,
                                                                    original_coordinates[i, 1] - min_y]], axis=0)
     return cropped_coordinates
@@ -172,22 +173,17 @@ def draw_points_on_image(image, coordinates):
     return None
 
 
-def generate_density_map(img_path: str, coor_path: str):
+def generate_density_map(img, coor):
     """
     Generate a density map based on objects positions.
 
     Args:
-        img_path (str):     location of image
-        coor_path (str):    location of txt file containing coordinate info in (x, y) format
+        img (ndarray):      image (h, w, RGB)
+        coor (ndarray):     ndarray containing egg coordinate info in (x, y) format
 
     Returns:
         density_map:        density map of inputted image
     """
-
-    assert img_path.rstrip('.JPG') == coor_path.rstrip('.txt'), 'img_path and coor_path files do not match'
-
-    img = cv2.imread(img_path)
-    coor = np.loadtxt(coor_path)
     coor = coor.astype(int)  # round to int
     # initialise density map of size image - only 1 channel
     density_map = np.zeros((img.shape[0], img.shape[1]), dtype=np.float32)
@@ -202,37 +198,10 @@ def generate_density_map(img_path: str, coor_path: str):
     return density_map
 
 
-def generate_density_dot_map(img_path: str, coor_path: str):
-    """
-    Generate a density map based on objects positions.
-
-    Args:
-        img_path (str):     location of image
-        coor_path (str):    location of txt file containing coordinate info in (x, y) format
-
-    Returns:
-        density_dot_map:    density map of inputted image in binary (1 for egg, 0 for empty space)
-    """
-
-    assert img_path.rstrip('.JPG') == coor_path.rstrip('.txt'), 'img_path and coor_path files do not match'
-
-    img = cv2.imread(img_path)
-    coor = np.loadtxt(coor_path)
-    coor = coor.astype(int)  # round to int
-    # initialise density map of size image - only 1 channel
-    density_dot_map = np.zeros((img.shape[0], img.shape[1]), dtype=bool)
-
-    # applying heat of 100 at location of eggs
-    for i in range(coor.shape[0]):
-        density_dot_map[coor[i, 1], coor[i, 0]] = 1
-    return density_dot_map
-
-
 def cropped_box_shift(corners, desired_aspect_ratio):
     """
     Adjusts corner coordinates of a box to match desired aspect ratio so as not to distort the image. This is achieved
     by increasing either the height or width of the box coordinates to capture more of the image.
-
     Args:
         corners (list of (tuples)):     input box coordinates [(x_start, y_start), (x_end, y_end)]
         desired_aspect_ratio (float):   aspect ratio (width / height) of output box
@@ -455,7 +424,7 @@ def image_down_res_dmap(resolution: str = "360p", img_path: str = ""):
     cv2.imwrite(img_path_save, img_downscaled)
     np.savetxt(coor_path_save, coor_downscaled)
 
-    dmap = generate_density_map(img_path_save, coor_path_save)
+    dmap = generate_density_map(img_downscaled, coor_downscaled)
     np.savetxt(dmap_path_save, dmap)
     return img_path, img_downscaled, coor_downscaled, dmap
 
@@ -497,7 +466,8 @@ def get_image_path():
     return image_path
 
 
-def load_train_val_data():
+def load_train_val_data(directory: str = 'egg_photos/originals', validation_split: float = 0.2,
+                        resolution: str = "360p"):
     """
     Load training images (X_train) and normalises them, as well as their density map (y_train)
 
@@ -506,31 +476,40 @@ def load_train_val_data():
         Y_train (list of images):   density maps of training images
 
     """
-    X_train_files = get_file_list('egg_photos/full_image_only/train', "_360p.JPG") \
-                    + get_file_list('egg_photos/full_image_only/train', "_360p.jpg")
+    files = get_file_list(directory, ".JPG")
+    res_tuple = res[resolution]     # default (480, 360)
+    down_res_factor = 3.    # originals are in 4912x7360 resolution, eggs are still discernible at 1/9th resolution
+    X = np.empty((0, res_tuple[1], res_tuple[0], 3), dtype=np.uint8)
+    Y = np.empty((0, res_tuple[1], res_tuple[0]), dtype=np.float32)
+    for f in tqdm(files):
+        img = cv2.imread(f)
+        yolo_coor = np.loadtxt(f[:-4] + ".txt")
+        coor = yolo_to_xy(yolo_coor, img.shape[0:2])
+        img_resc, rf = image_rescale(img, (int(img.shape[0]/down_res_factor), int(img.shape[1]/down_res_factor)))
+        coor_resc = coor_rescale(coor, rf)
+        sub_images, dmaps = split_image_dmap(img_resc, coor_resc, resolution)
+        X = np.append(X, sub_images, axis=0)
+        Y = np.append(Y, dmaps, axis=0)
 
-    X_size = cv2.imread(X_train_files[0]).shape
-    Y_size = np.loadtxt(X_train_files[0][:-4] + "_dmap.txt").shape
-    X_train = np.zeros((X_train_files.__len__(), X_size[0], X_size[1], X_size[2]))
-    Y_train = np.zeros((X_train_files.__len__(), Y_size[0], Y_size[1], 1))
-    for i in tqdm(range(X_train_files.__len__())):
-        X_train[i] = cv2.imread(X_train_files[i])
-        Y_train[i, :, :, 0] = np.loadtxt(X_train_files[i][:-4] + "_dmap.txt")
+    assert X.shape[0] == Y.shape[0], "Loaded data are not of equal length: X != Y"
 
-    X_val_files = get_file_list('egg_photos/full_image_only/val', "_360p.JPG") \
-                  + get_file_list('egg_photos/full_image_only/val', "_360p.jpg")
-    X_val = np.zeros((X_val_files.__len__(), X_size[0], X_size[1], X_size[2]))
-    Y_val = np.zeros((X_val_files.__len__(), Y_size[0], Y_size[1], 1))
-    for i in tqdm(range(X_val_files.__len__())):
-        X_val[i] = cv2.imread(X_val_files[i])
-        Y_val[i, :, :, 0] = np.loadtxt(X_val_files[i][:-4] + "_dmap.txt")
+    # shuffling for random distribution of examples
+    ind = np.arange(X.shape[0])
+    np.random.shuffle(ind)
+    X = X[ind]
+    Y = Y[ind]
 
-    X_train = X_train.astype('float32')
-    Y_train = Y_train.astype('float32')
-    X_train /= 255.
-    X_val = X_val.astype('float32')
-    Y_val = Y_val.astype('float32')
-    X_val /= 255.
+    # normalising
+    X = X.astype('float32')
+    Y = Y.astype('float32')
+    X /= 255.
+
+    # splitting in train/val sets
+    ind_split = int(validation_split * X.shape[0])
+    X_train = X[ind_split:]
+    X_val = X[:ind_split]
+    Y_train = Y[ind_split:]
+    Y_val = Y[:ind_split]
     return X_train, Y_train, X_val, Y_val
 
 
@@ -566,7 +545,7 @@ def get_file_list(path: str, search_term: str):
     # r=root, d=directories, f = files
     for r, d, f in os.walk(path):
         for file in f:
-            if search_term in file:
+            if search_term.lower() in files or search_term.upper() in file:
                 files.append(os.path.join(r, file))
     return files
 
@@ -599,12 +578,12 @@ def split_image(image, resolution: str = "360p"):
     res_dim = res[resolution]  # (w, h)
 
     # determining which sub-image orientation will yield minimal pixel lost in re-scaling
-    n_img_h_by_res_w = int(np.floor(img_dim[0] / res_dim[0]))   # times sub-image width can fit in image's height
-    n_img_w_by_res_h = int(np.floor(img_dim[1] / res_dim[1]))   # times sub-image height can fit in image's width
-    n_img_h_by_res_h = int(np.floor(img_dim[0] / res_dim[1]))   # times sub-image height can fit in image's height
-    n_img_w_by_res_w = int(np.floor(img_dim[1] / res_dim[0]))   # times sub-image width can fit in image's width
-    n_sub_img_hw_wh = n_img_h_by_res_w * n_img_w_by_res_h       # number of sub-images if image is split by h/w & w/h
-    n_sub_img_hw_hw = n_img_h_by_res_h * n_img_w_by_res_w       # number of sub-images if image is split by h/h & w/w
+    n_img_h_by_res_w = int(np.floor(img_dim[0] / res_dim[0]))  # times sub-image width can fit in image's height
+    n_img_w_by_res_h = int(np.floor(img_dim[1] / res_dim[1]))  # times sub-image height can fit in image's width
+    n_img_h_by_res_h = int(np.floor(img_dim[0] / res_dim[1]))  # times sub-image height can fit in image's height
+    n_img_w_by_res_w = int(np.floor(img_dim[1] / res_dim[0]))  # times sub-image width can fit in image's width
+    n_sub_img_hw_wh = n_img_h_by_res_w * n_img_w_by_res_h  # number of sub-images if image is split by h/w & w/h
+    n_sub_img_hw_hw = n_img_h_by_res_h * n_img_w_by_res_w  # number of sub-images if image is split by h/h & w/w
     if n_sub_img_hw_hw >= n_sub_img_hw_wh:  # choosing method which will yield minimal information loss
         if n_sub_img_hw_hw <= 1:  # image cannot be broken down further
             sub_images, = image_rescale(image, res_dim)
@@ -615,7 +594,7 @@ def split_image(image, resolution: str = "360p"):
             for i in range(n_img_h_by_res_h):
                 for j in range(n_img_w_by_res_w):
                     sub_images[i * n_img_w_by_res_w + j] = img_resc[i * res_dim[1]:(i + 1) * res_dim[1],
-                                                                    j * res_dim[0]:(j + 1) * res_dim[0]]
+                                                           j * res_dim[0]:(j + 1) * res_dim[0]]
     else:
         if n_sub_img_hw_wh <= 1:  # image cannot be broken down further
             sub_images = image_rescale(image, res_dim)
@@ -623,9 +602,76 @@ def split_image(image, resolution: str = "360p"):
         else:
             sub_images = np.zeros(shape=(n_sub_img_hw_wh, res_dim[1], res_dim[0], 3), dtype="uint8")
             img_resc, _ = image_rescale(image, (res_dim[1] * n_img_w_by_res_h, res_dim[0] * n_img_h_by_res_w))
-            img_resc = np.rot90(img_resc)   # rotate image to adjust to the h/w image misalignment
-            for i in range(n_img_h_by_res_w):   # width
-                for j in range(n_img_w_by_res_h):   # height
+            img_resc = np.rot90(img_resc)  # rotate image to adjust to the h/w image misalignment
+            for i in range(n_img_h_by_res_w):  # width
+                for j in range(n_img_w_by_res_h):  # height
+                    sub_images[i * n_img_w_by_res_h + j] = img_resc[j * res_dim[1]:(j + 1) * res_dim[1],
+                                                           i * res_dim[0]:(i + 1) * res_dim[0]]
+    return sub_images
+
+
+def split_image_dmap(image, coor, resolution: str = "360p"):
+    """
+    TODO: fix rotation coordinate and dmap method
+    Takes in larger image and converts it to multiple sub-image with minimal resolution loss.
+    Args:
+        image (ndarray):        input image to be broken down (h, w, RGB)
+        coor (ndarray):         ndarray containing egg coordinate info in (x, y) format
+        resolution (str):       desired output sub-image resolution, default: "360p" = (480, 360)
+    Returns:
+        sub_images (ndarray):   ndarray of shape (# sub-images, (resolution), 3)
+        dmaps (ndarray):        density maps of sub-images (# sub-images, (resolution))
+    """
+    img_dim = image.shape  # (h, w, 3)
+    res_dim = res[resolution]  # (w, h)
+
+    # determining which sub-image orientation will yield minimal pixel lost in re-scaling
+    n_img_h_by_res_w = int(np.floor(img_dim[0] / res_dim[0]))  # times sub-image width can fit in image's height
+    n_img_w_by_res_h = int(np.floor(img_dim[1] / res_dim[1]))  # times sub-image height can fit in image's width
+    n_img_h_by_res_h = int(np.floor(img_dim[0] / res_dim[1]))  # times sub-image height can fit in image's height
+    n_img_w_by_res_w = int(np.floor(img_dim[1] / res_dim[0]))  # times sub-image width can fit in image's width
+    n_sub_img_hw_wh = n_img_h_by_res_w * n_img_w_by_res_h  # number of sub-images if image is split by h/w & w/h
+    n_sub_img_hw_hw = n_img_h_by_res_h * n_img_w_by_res_w  # number of sub-images if image is split by h/h & w/w
+    if n_sub_img_hw_hw >= n_sub_img_hw_wh:  # choosing method which will yield minimal information loss
+        if n_sub_img_hw_hw <= 1:  # image cannot be broken down further
+            sub_images = np.zeros(shape=(1, res_dim[1], res_dim[0], 3), dtype="uint8")
+            sub_images[0], rf = image_rescale(image, res_dim)
+            coor_resc = coor_rescale(coor, rf)
+            dmaps = np.zeros(shape=(1, res_dim[1], res_dim[0]), dtype=np.float32)
+            dmaps[0] = generate_density_map(sub_images[0], coor_resc)
+            print("Image was re-scaled, but could not be broken down into sub-images.")
+        else:
+            sub_images = np.zeros(shape=(n_sub_img_hw_hw, res_dim[1], res_dim[0], 3), dtype="uint8")
+            img_resc, rf = image_rescale(image, (res_dim[0] * n_img_w_by_res_w, res_dim[1] * n_img_h_by_res_h))
+            coor_resc = coor_rescale(coor, rf)
+            dmap = generate_density_map(img_resc, coor_resc)
+            dmaps = np.zeros(shape=(n_sub_img_hw_hw, res_dim[1], res_dim[0]), dtype=np.float32)
+            for i in range(n_img_h_by_res_h):
+                for j in range(n_img_w_by_res_w):
+                    sub_images[i * n_img_w_by_res_w + j] = img_resc[i * res_dim[1]:(i + 1) * res_dim[1],
+                                                                    j * res_dim[0]:(j + 1) * res_dim[0]]
+                    dmaps[i * n_img_w_by_res_w + j] = dmap[i * res_dim[1]:(i + 1) * res_dim[1],
+                                                           j * res_dim[0]:(j + 1) * res_dim[0]]
+    else:
+        if n_sub_img_hw_wh <= 1:  # image cannot be broken down further
+            sub_images = np.zeros(shape=(1, res_dim[1], res_dim[0], 3), dtype="uint8")
+            sub_images[0], rf = image_rescale(image, res_dim)
+            coor_resc = coor_rescale(coor, rf)
+            dmaps = np.zeros(shape=(1, res_dim[1], res_dim[0]), dtype=np.float32)
+            dmaps[0] = generate_density_map(sub_images[0], coor_resc)
+            print("Image was re-scaled, but could not be broken down into sub-images.")
+        else:
+            sub_images = np.zeros(shape=(n_sub_img_hw_wh, res_dim[1], res_dim[0], 3), dtype="uint8")
+            img_resc, rf = image_rescale(image, (res_dim[1] * n_img_w_by_res_h, res_dim[0] * n_img_h_by_res_w))
+            coor_resc = coor_rescale(coor, rf)
+            dmap = generate_density_map(img_resc, coor_resc)
+            img_resc = np.rot90(img_resc)  # rotate image to adjust to the h/w image misalignment
+            dmap = np.rot90(dmap)  # rotate dmap to match re-scaled image's orientation
+            dmaps = np.zeros(shape=(n_sub_img_hw_wh, res_dim[1], res_dim[0]), dtype=np.float32)
+            for i in range(n_img_h_by_res_w):  # width
+                for j in range(n_img_w_by_res_h):  # height
                     sub_images[i * n_img_w_by_res_h + j] = img_resc[j * res_dim[1]:(j + 1) * res_dim[1],
                                                                     i * res_dim[0]:(i + 1) * res_dim[0]]
-    return sub_images
+                    dmaps[i * n_img_w_by_res_h + j] = dmap[j * res_dim[1]:(j + 1) * res_dim[1],
+                                                           i * res_dim[0]:(i + 1) * res_dim[0]]
+    return sub_images, dmaps

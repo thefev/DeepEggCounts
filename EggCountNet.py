@@ -184,6 +184,7 @@ class EggCountNet(object):
         self.img_cols = img_cols
 
     def buildModel_U_net_9block(self, pre_trained_weights: str = None):
+        # experimenting with different U-net depths
         inputs = Input((self.img_rows, self.img_cols, 3))
         # =========================================================================
         block1 = conv_bn_relu_x2(input_layer=inputs, filters=64)
@@ -228,6 +229,7 @@ class EggCountNet(object):
         return model
 
     def buildModel_U_net_7block(self, pre_trained_weights: str = None):
+        # experimenting with different U-net depths
         inputs = Input((self.img_rows, self.img_cols, 3))
         # =========================================================================
         block1 = conv_bn_relu_x2(input_layer=inputs, filters=64)
@@ -264,6 +266,7 @@ class EggCountNet(object):
         return model
 
     def buildModel_U_net_5block(self, pre_trained_weights: str = None):
+        # experimenting with different U-net depths
         inputs = Input((self.img_rows, self.img_cols, 3))
         # =========================================================================
         block1 = conv_bn_relu_x2(input_layer=inputs, filters=64)
