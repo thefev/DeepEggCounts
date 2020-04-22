@@ -81,7 +81,6 @@ def yolo_to_xy(yolo_txt, img_dim: tuple):
         coor_format (ndarray of int):   np array of coordinates of eggs (x, y)
     """
     coor_format = yolo_txt[:, 1:3]  # extract (x, y) coordinate info
-    coor_format = coor_format * (-1) + 1  # 180 degree rotation
     coor_format[:, 0] *= img_dim[1]  # transforming percentages to coordinates
     coor_format[:, 1] *= img_dim[0]
     coor_format = coor_format.astype(int)  # round to int
@@ -507,8 +506,8 @@ def load_train_val_data(directory: str = 'egg_photos/originals', validation_spli
     # splitting in train/val sets
     ind_split = int(validation_split * X.shape[0])
     X_train = X[ind_split:]
-    X_val = X[:ind_split]
     Y_train = Y[ind_split:]
+    X_val = X[:ind_split]
     Y_val = Y[:ind_split]
     return X_train, Y_train, X_val, Y_val
 
@@ -584,6 +583,7 @@ def split_image(image, resolution: str = "360p"):
     n_img_w_by_res_w = int(np.floor(img_dim[1] / res_dim[0]))  # times sub-image width can fit in image's width
     n_sub_img_hw_wh = n_img_h_by_res_w * n_img_w_by_res_h  # number of sub-images if image is split by h/w & w/h
     n_sub_img_hw_hw = n_img_h_by_res_h * n_img_w_by_res_w  # number of sub-images if image is split by h/h & w/w
+
     if n_sub_img_hw_hw >= n_sub_img_hw_wh:  # choosing method which will yield minimal information loss
         if n_sub_img_hw_hw <= 1:  # image cannot be broken down further
             sub_images, = image_rescale(image, res_dim)
@@ -612,7 +612,6 @@ def split_image(image, resolution: str = "360p"):
 
 def split_image_dmap(image, coor, resolution: str = "360p"):
     """
-    TODO: fix rotation coordinate and dmap method
     Takes in larger image and converts it to multiple sub-image with minimal resolution loss.
     Args:
         image (ndarray):        input image to be broken down (h, w, RGB)
@@ -632,46 +631,32 @@ def split_image_dmap(image, coor, resolution: str = "360p"):
     n_img_w_by_res_w = int(np.floor(img_dim[1] / res_dim[0]))  # times sub-image width can fit in image's width
     n_sub_img_hw_wh = n_img_h_by_res_w * n_img_w_by_res_h  # number of sub-images if image is split by h/w & w/h
     n_sub_img_hw_hw = n_img_h_by_res_h * n_img_w_by_res_w  # number of sub-images if image is split by h/h & w/w
-    if n_sub_img_hw_hw >= n_sub_img_hw_wh:  # choosing method which will yield minimal information loss
-        if n_sub_img_hw_hw <= 1:  # image cannot be broken down further
-            sub_images = np.zeros(shape=(1, res_dim[1], res_dim[0], 3), dtype="uint8")
-            sub_images[0], rf = image_rescale(image, res_dim)
-            coor_resc = coor_rescale(coor, rf)
-            dmaps = np.zeros(shape=(1, res_dim[1], res_dim[0]), dtype=np.float32)
-            dmaps[0] = generate_density_map(sub_images[0], coor_resc)
-            print("Image was re-scaled, but could not be broken down into sub-images.")
-        else:
-            sub_images = np.zeros(shape=(n_sub_img_hw_hw, res_dim[1], res_dim[0], 3), dtype="uint8")
-            img_resc, rf = image_rescale(image, (res_dim[0] * n_img_w_by_res_w, res_dim[1] * n_img_h_by_res_h))
-            coor_resc = coor_rescale(coor, rf)
-            dmap = generate_density_map(img_resc, coor_resc)
-            dmaps = np.zeros(shape=(n_sub_img_hw_hw, res_dim[1], res_dim[0]), dtype=np.float32)
-            for i in range(n_img_h_by_res_h):
-                for j in range(n_img_w_by_res_w):
-                    sub_images[i * n_img_w_by_res_w + j] = img_resc[i * res_dim[1]:(i + 1) * res_dim[1],
-                                                                    j * res_dim[0]:(j + 1) * res_dim[0]]
-                    dmaps[i * n_img_w_by_res_w + j] = dmap[i * res_dim[1]:(i + 1) * res_dim[1],
-                                                           j * res_dim[0]:(j + 1) * res_dim[0]]
+
+    if n_sub_img_hw_wh > n_sub_img_hw_hw:
+        image = np.swapaxes(image, 0, 1)    # flip image
+        temp = np.zeros_like(coor)
+        temp[:, 0] = coor[:, 1]
+        temp[:, 1] = coor[:, 0]
+        coor = temp     # flipping coordinate axes
+        n_sub_img_hw_hw = n_sub_img_hw_wh   # updating number of sub-images to return
+
+    if n_sub_img_hw_hw <= 1:  # image cannot be broken down further
+        sub_images = np.zeros(shape=(1, res_dim[1], res_dim[0], 3), dtype="uint8")
+        sub_images[0], rf = image_rescale(image, res_dim)
+        coor_resc = coor_rescale(coor, rf)
+        dmaps = np.zeros(shape=(1, res_dim[1], res_dim[0]), dtype=np.float32)
+        dmaps[0] = generate_density_map(sub_images[0], coor_resc)
+        print("Image was re-scaled, but could not be broken down into sub-images.")
     else:
-        if n_sub_img_hw_wh <= 1:  # image cannot be broken down further
-            sub_images = np.zeros(shape=(1, res_dim[1], res_dim[0], 3), dtype="uint8")
-            sub_images[0], rf = image_rescale(image, res_dim)
-            coor_resc = coor_rescale(coor, rf)
-            dmaps = np.zeros(shape=(1, res_dim[1], res_dim[0]), dtype=np.float32)
-            dmaps[0] = generate_density_map(sub_images[0], coor_resc)
-            print("Image was re-scaled, but could not be broken down into sub-images.")
-        else:
-            sub_images = np.zeros(shape=(n_sub_img_hw_wh, res_dim[1], res_dim[0], 3), dtype="uint8")
-            img_resc, rf = image_rescale(image, (res_dim[1] * n_img_w_by_res_h, res_dim[0] * n_img_h_by_res_w))
-            coor_resc = coor_rescale(coor, rf)
-            dmap = generate_density_map(img_resc, coor_resc)
-            img_resc = np.rot90(img_resc)  # rotate image to adjust to the h/w image misalignment
-            dmap = np.rot90(dmap)  # rotate dmap to match re-scaled image's orientation
-            dmaps = np.zeros(shape=(n_sub_img_hw_wh, res_dim[1], res_dim[0]), dtype=np.float32)
-            for i in range(n_img_h_by_res_w):  # width
-                for j in range(n_img_w_by_res_h):  # height
-                    sub_images[i * n_img_w_by_res_h + j] = img_resc[j * res_dim[1]:(j + 1) * res_dim[1],
-                                                                    i * res_dim[0]:(i + 1) * res_dim[0]]
-                    dmaps[i * n_img_w_by_res_h + j] = dmap[j * res_dim[1]:(j + 1) * res_dim[1],
-                                                           i * res_dim[0]:(i + 1) * res_dim[0]]
+        sub_images = np.zeros(shape=(n_sub_img_hw_hw, res_dim[1], res_dim[0], 3), dtype="uint8")
+        img_resc, rf = image_rescale(image, (res_dim[0] * n_img_w_by_res_w, res_dim[1] * n_img_h_by_res_h))
+        coor_resc = coor_rescale(coor, rf)
+        dmap = generate_density_map(img_resc, coor_resc)
+        dmaps = np.zeros(shape=(n_sub_img_hw_hw, res_dim[1], res_dim[0]), dtype=np.float32)
+        for i in range(n_img_h_by_res_h):
+            for j in range(n_img_w_by_res_w):
+                sub_images[i * n_img_w_by_res_w + j] = img_resc[i * res_dim[1]:(i + 1) * res_dim[1],
+                                                                j * res_dim[0]:(j + 1) * res_dim[0]]
+                dmaps[i * n_img_w_by_res_w + j] = dmap[i * res_dim[1]:(i + 1) * res_dim[1],
+                                                       j * res_dim[0]:(j + 1) * res_dim[0]]
     return sub_images, dmaps
