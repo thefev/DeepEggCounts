@@ -584,29 +584,21 @@ def split_image(image, resolution: str = "360p"):
     n_sub_img_hw_wh = n_img_h_by_res_w * n_img_w_by_res_h  # number of sub-images if image is split by h/w & w/h
     n_sub_img_hw_hw = n_img_h_by_res_h * n_img_w_by_res_w  # number of sub-images if image is split by h/h & w/w
 
-    if n_sub_img_hw_hw >= n_sub_img_hw_wh:  # choosing method which will yield minimal information loss
-        if n_sub_img_hw_hw <= 1:  # image cannot be broken down further
-            sub_images, = image_rescale(image, res_dim)
-            print("Image was re-scaled, but could not be broken down into sub-images.")
-        else:
-            sub_images = np.zeros(shape=(n_sub_img_hw_hw, res_dim[1], res_dim[0], 3), dtype="uint8")
-            img_resc, _ = image_rescale(image, (res_dim[0] * n_img_w_by_res_w, res_dim[1] * n_img_h_by_res_h))
-            for i in range(n_img_h_by_res_h):
-                for j in range(n_img_w_by_res_w):
-                    sub_images[i * n_img_w_by_res_w + j] = img_resc[i * res_dim[1]:(i + 1) * res_dim[1],
-                                                           j * res_dim[0]:(j + 1) * res_dim[0]]
+    if n_sub_img_hw_wh > n_sub_img_hw_hw:
+        image = np.swapaxes(image, 0, 1)    # flip image
+        n_sub_img_hw_hw = n_sub_img_hw_wh   # updating number of sub-images to return
+
+    if n_sub_img_hw_hw <= 1:  # image cannot be broken down further
+        sub_images = np.zeros(shape=(1, res_dim[1], res_dim[0], 3), dtype="uint8")
+        sub_images[0], _ = image_rescale(image, res_dim)
+        print("Image was re-scaled, but could not be broken down into sub-images.")
     else:
-        if n_sub_img_hw_wh <= 1:  # image cannot be broken down further
-            sub_images = image_rescale(image, res_dim)
-            print("Image was re-scaled, but could not be broken down into sub-images.")
-        else:
-            sub_images = np.zeros(shape=(n_sub_img_hw_wh, res_dim[1], res_dim[0], 3), dtype="uint8")
-            img_resc, _ = image_rescale(image, (res_dim[1] * n_img_w_by_res_h, res_dim[0] * n_img_h_by_res_w))
-            img_resc = np.rot90(img_resc)  # rotate image to adjust to the h/w image misalignment
-            for i in range(n_img_h_by_res_w):  # width
-                for j in range(n_img_w_by_res_h):  # height
-                    sub_images[i * n_img_w_by_res_h + j] = img_resc[j * res_dim[1]:(j + 1) * res_dim[1],
-                                                           i * res_dim[0]:(i + 1) * res_dim[0]]
+        sub_images = np.zeros(shape=(n_sub_img_hw_hw, res_dim[1], res_dim[0], 3), dtype="uint8")
+        img_resc, _ = image_rescale(image, (res_dim[0] * n_img_w_by_res_w, res_dim[1] * n_img_h_by_res_h))
+        for i in range(n_img_h_by_res_h):
+            for j in range(n_img_w_by_res_w):
+                sub_images[i * n_img_w_by_res_w + j] = img_resc[i * res_dim[1]:(i + 1) * res_dim[1],
+                                                                j * res_dim[0]:(j + 1) * res_dim[0]]
     return sub_images
 
 
