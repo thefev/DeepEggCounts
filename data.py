@@ -465,21 +465,22 @@ def get_image_path():
     return image_path
 
 
-def load_train_val_data(directory: str = 'egg_photos/originals', validation_split: float = 0.2,
-                        resolution: str = "360p"):
+def load_data(directory: str = 'egg_photos/originals', resolution: str = "360p"):
     """
     Load training images (X_train) and normalises them, as well as their density map (y_train)
+    Args:
 
     Returns:
-        X_train (list of images):   training images in 480p format
-        Y_train (list of images):   density maps of training images
-
+        X (list of images):     training images (n examples, h, w, RGB)
+        Y (list of images):     density maps of training images (n examples, h, w)
+        num_sub_imgs (array):   array of number of sub-images that the initial image was split into
     """
     files = get_file_list(directory, ".JPG")
     res_tuple = res[resolution]     # default (480, 360)
     down_res_factor = 3.    # originals are in 4912x7360 resolution, eggs are still discernible at 1/9th resolution
     X = np.empty((0, res_tuple[1], res_tuple[0], 3), dtype=np.uint8)
     Y = np.empty((0, res_tuple[1], res_tuple[0]), dtype=np.float32)
+    num_sub_imgs = np.empty(0, dtype=np.uint8)
     for f in tqdm(files):
         img = cv2.imread(f)
         yolo_coor = np.loadtxt(f[:-4] + ".txt")
@@ -487,47 +488,41 @@ def load_train_val_data(directory: str = 'egg_photos/originals', validation_spli
         img_resc, rf = image_rescale(img, (int(img.shape[0]/down_res_factor), int(img.shape[1]/down_res_factor)))
         coor_resc = coor_rescale(coor, rf)
         sub_images, dmaps = split_image_dmap(img_resc, coor_resc, resolution)
-        X = np.append(X, sub_images, axis=0)
-        Y = np.append(Y, dmaps, axis=0)
 
+        # loading only sub-images with eggs
+        n_with_eggs = 0
+        for i in range(dmaps.shape[0]):
+            if np.sum(dmaps[i]) > 0:
+                X = np.append(X, sub_images[i:i+1], axis=0)
+                Y = np.append(Y, dmaps[i:i+1], axis=0)
+                n_with_eggs += 1
+        num_sub_imgs = np.append(num_sub_imgs, n_with_eggs)
     assert X.shape[0] == Y.shape[0], "Loaded data are not of equal length: X != Y"
-
-    # shuffling for random distribution of examples
-    ind = np.arange(X.shape[0])
-    np.random.shuffle(ind)
-    X = X[ind]
-    Y = Y[ind]
+    Y = Y[..., np.newaxis]      # adding addition 'filter' axis
 
     # normalising
     X = X.astype('float32')
     Y = Y.astype('float32')
     X /= 255.
-
-    # splitting in train/val sets
-    ind_split = int(validation_split * X.shape[0])
-    X_train = X[ind_split:]
-    Y_train = Y[ind_split:]
-    X_val = X[:ind_split]
-    Y_val = Y[:ind_split]
-    return X_train, Y_train, X_val, Y_val
+    return X, Y, num_sub_imgs
 
 
-def load_test_data():
+def sum_density_over_sub_images(Y, n_sub_images):
     """
-    Load test images
+    Sums density maps of sub-images to return the number of eggs within each full image
+    Args:
+        Y (ndarray):                    density map of each sub-image (n sub-images, h, w, 1)
+        n_sub_images (array of int):    array of number of sub-images within each full-image
 
     Returns:
-        X_test  (list of images):   test images
+        n_eggs (array of int):  number of eggs in each full image
     """
-    X_files = get_file_list('egg_photos/test/', "_360p.JPG") + get_file_list('egg_photos/test/', "_360p.jpg")
-    X_size = cv2.imread(X_files[0]).shape
-    X_test = np.zeros((X_files.__len__(), X_size[0], X_size[1], X_size[2]))
-    for i in tqdm(range(len(X_files))):
-        X_test[i] = cv2.imread(X_files[i])
-
-    X_test = X_test.astype('float32')
-    X_test /= 255
-    return X_test
+    n_eggs = np.zeros(n_sub_images.shape[0])
+    ind_start = 0
+    for i in range(n_sub_images.shape[0]):
+        n_eggs[i] = int(np.sum(Y[ind_start:ind_start+n_sub_images[i]]) / 100)
+        ind_start += n_sub_images[i]
+    return n_eggs
 
 
 def get_file_list(path: str, search_term: str):
@@ -547,20 +542,6 @@ def get_file_list(path: str, search_term: str):
             if search_term.lower() in files or search_term.upper() in file:
                 files.append(os.path.join(r, file))
     return files
-
-
-def bulk_down_res(incoming_resolution: str = "", outgoing_resolution: str = "360p"):
-    files = get_file_list('egg_photos/drive-download-20200416T113445Z-001/all', incoming_resolution + '.JPG')
-    for f in files:
-        img, rf = image_rescale(cv2.imread(f), res[outgoing_resolution])
-        cv2.imwrite(f[:-4] + "_" + outgoing_resolution + f[-4:], img)
-
-
-def bulk_gen_dmap():
-    files = get_file_list('egg_photos/test', '_360p.JPG')
-    for f in files:
-        dmap = generate_density_map(f, f[:-3] + 'txt')
-        np.savetxt(f[:-4] + '_dmap.txt', dmap)
 
 
 def split_image(image, resolution: str = "360p"):

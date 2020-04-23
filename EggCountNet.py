@@ -108,53 +108,20 @@ def validate_test(model_file: str = 'model_unet9.h5'):
 
     print('-' * 100)
     print('Train and Validation set:')
-    X_train, Y_train, X_val, Y_val = load_train_val_data()
-    Y_pred_train = model.predict(X_train, batch_size=1, verbose=1)
-    Y_pred_val = model.predict(X_val, batch_size=1, verbose=1)
-    err_train = 0
-    err_val = 0
-    for i in range(Y_pred_train.shape[0]):
-        heat_pred = np.sum(Y_pred_train[i])
+    X, Y, n_sub_imgs = load_data()
+    Y_pred = model.predict(X, batch_size=1, verbose=1)
+    error = 0
+    for i in range(Y_pred.shape[0]):
+        heat_pred = np.sum(Y_pred[i])
         eggs_pred = int(np.round(heat_pred / egg_density))
         print('Predicted number of eggs:\t' + str(eggs_pred))
-        ground_truth = int(np.round(np.sum(Y_train[i]) / egg_density))
+        ground_truth = int(np.round(np.sum(Y[i]) / egg_density))
         print('Actual number of eggs:\t' + str(ground_truth))
         error = eggs_pred - ground_truth
-        # heat_map(X_train[i], Y_pred[i])
         print('Error:\t' + str(error) + ' (' + f'{catch_div_by_zero(error, ground_truth)*100:.2f}' + '%)')
-        err_train += np.abs(error)
+        error += np.abs(error)
         print('-' * 30)
-    print('Total error in train set:\t' + str(err_train))
-
-    print('-' * 100)
-    for i in range(Y_pred_val.shape[0]):
-        heat_pred = np.sum(Y_pred_val[i])
-        eggs_pred = int(np.round(heat_pred / egg_density))
-        print('Predicted number of eggs:\t' + str(eggs_pred))
-        ground_truth = int(np.round(np.sum(Y_val[i]) / egg_density))
-        print('Actual number of eggs:\t' + str(ground_truth))
-        error = eggs_pred - ground_truth
-        heat_map(X_val[i], Y_pred_val[i])
-        print('Error:\t' + str(error) + ' (' + f'{catch_div_by_zero(error, ground_truth)*100:.2f}' + '%)')
-        err_val += np.abs(error)
-        print('-' * 30)
-    print('Total error in validation set:\t' + str(err_val))
-
-    # print('-' * 100)
-    # print('Test set')
-    # X_test = load_test_data()
-    # Y_test = model.predict(X_test, batch_size=1, verbose=1)
-    # for i in range(Y_test.shape[0]):
-    #     heat_pred = np.sum(Y_test[i])
-    #     eggs_pred = int(np.round(heat_pred / egg_density))
-    #     print('Predicted number of eggs:\t' + str(eggs_pred))
-    #     # ground_truth = int(np.round(np.sum(Y_test[i]) / egg_density))
-    #     # print('Actual number of eggs:\t' + str(ground_truth))
-    #     # error = eggs_pred - ground_truth
-    #     heat_map(X_test[i], Y_test[i])
-    #     # print('Error:\t' + str(error) + ' (' + f'{catch_div_by_zero(error, ground_truth)*100:.2f}' + '%)')
-    #     # err_val += np.abs(error)
-    #     print('-' * 30)
+    print('Total error in train set:\t' + str(error))
 
 
 def predict_input(model_file: str = 'model_unet9.h5'):
@@ -298,7 +265,7 @@ class EggCountNet(object):
 
     def train(self, model_file):
         print("Loading data...")
-        X_train, Y_train, X_val, Y_val = load_train_val_data()
+        X, Y, n_sub_imgs = load_data()
 
         print("Loading data done")
 
@@ -332,7 +299,7 @@ class EggCountNet(object):
         # batch_size limited to 1 due to my own GPU's memory limitations
         # log_dir = "logs/fit/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
         # tensorboard_callback = TensorBoard(log_dir=log_dir, histogram_freq=1)
-        history = model.fit(X_train, Y_train, batch_size=1, validation_data=(X_val, Y_val), epochs=200, verbose=1,
+        history = model.fit(X, Y, batch_size=1, validation_split=0.2, epochs=200, verbose=0,
                             shuffle=True, callbacks=[model_checkpoint, model_learning_rate])
 
         # plot loss during training
@@ -347,7 +314,7 @@ class EggCountNet(object):
 
 if __name__ == '__main__':
     eggstimator = EggCountNet()
-    model_file = 'model_unet9.h5'
+    model_file = 'model_unet7.h5'
     eggstimator.train(model_file)
     # validate_test(model_file)
     # predict_input(model_file)
