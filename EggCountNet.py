@@ -18,11 +18,11 @@ from keras.models import Model, load_model
 from keras.layers import *
 from keras.optimizers import *
 from data import *
-
-
 # TODO:
-#     - load model properly in predict - get last loss
-#     - envelope network with UI
+#   - load model properly in predict - get last loss
+#   - envelope network with UI
+#   -  multiple image inputs for predictions
+
 
 def get_model_memory_usage(batch_size, model):
     shapes_mem_count = 0
@@ -104,24 +104,26 @@ def validate_test(model_file: str = 'model_unet9.h5'):
     else:
         print("Model doesn't exist. Nothing to validate.")
         exit()
-    egg_density = 100
 
     print('-' * 100)
     print('Train and Validation set:')
-    X, Y, n_sub_imgs = load_data()
-    Y_pred = model.predict(X, batch_size=1, verbose=1)
-    error = 0
-    for i in range(Y_pred.shape[0]):
-        heat_pred = np.sum(Y_pred[i])
-        eggs_pred = int(np.round(heat_pred / egg_density))
-        print('Predicted number of eggs:\t' + str(eggs_pred))
-        ground_truth = int(np.round(np.sum(Y[i]) / egg_density))
-        print('Actual number of eggs:\t' + str(ground_truth))
-        error = eggs_pred - ground_truth
-        print('Error:\t' + str(error) + ' (' + f'{catch_div_by_zero(error, ground_truth)*100:.2f}' + '%)')
-        error += np.abs(error)
+    # X, Y, n_sub_imgs = load_data_dir()
+    X, Y, n_sub_imgs = load_data_npy()
+    Y_pred = model.predict(X, batch_size=3, verbose=1)
+    error_total = 0
+    n_pred = sum_density_over_sub_images(Y_pred, n_sub_imgs)
+    n_actual = sum_density_over_sub_images(Y, n_sub_imgs)
+    for i in range(n_pred.shape[0]):
+        print('Predicted number of eggs:\t' + str(n_pred[i]))
+        print('Actual number of eggs:\t' + str(n_actual[i]))
+        error = n_pred[i] - n_actual[i]
+        print('Error:\t' + str(error) + ' (' + f'{catch_div_by_zero(error, n_actual[i])*100:.2f}' + '%)')
+        error_total += np.abs(error)
         print('-' * 30)
-    print('Total error in train set:\t' + str(error))
+
+    for i in range(20):
+        rn = np.random.randint(Y_pred.shape[0])
+        heat_map(X[rn], Y_pred[rn])
 
 
 def predict_input(model_file: str = 'model_unet9.h5'):
@@ -131,9 +133,9 @@ def predict_input(model_file: str = 'model_unet9.h5'):
         print("Model doesn't exist. Nothing to validate.")
         exit()
     img = image_crop_and_scale()
-    img = img[np.newaxis, ...]
+    img = img[np.newaxis, ...]      # add axis for single image inputs
     y_pred = model.predict(img)
-    heat_pred = np.sum(y_pred[i])
+    heat_pred = np.sum(y_pred[0])
     egg_density = 100
     print('Heat predicted:\t' + str(heat_pred))
     eggs_pred = int(np.round(heat_pred / egg_density))
@@ -155,7 +157,7 @@ class EggCountNet(object):
         inputs = Input((self.img_rows, self.img_cols, 3))
         # =========================================================================
         block1 = conv_bn_relu_x2(input_layer=inputs, filters=64)
-        drop1 = Dropout(0.0)(block1)
+        drop1 = Dropout(0.5)(block1)
         pool1 = MaxPooling2D(pool_size=(2, 2))(block1)
         # =========================================================================
         block2 = conv_bn_relu_x2(input_layer=pool1, filters=128)
@@ -163,15 +165,16 @@ class EggCountNet(object):
         pool2 = MaxPooling2D(pool_size=(2, 2))(drop2)
         # =========================================================================
         block3 = conv_bn_relu_x2(input_layer=pool2, filters=256)
-        drop3 = Dropout(0.3)(block3)
+        drop3 = Dropout(0.5)(block3)
         pool3 = MaxPooling2D(pool_size=(2, 2))(drop3)
         # =========================================================================
         block4 = conv_bn_relu_x2(input_layer=pool3, filters=512)
-        drop4 = Dropout(0.3)(block4)
+        drop4 = Dropout(0.5)(block4)
         pool4 = MaxPooling2D(pool_size=(2, 2))(drop4)
         # =========================================================================
         block5 = conv_bn_relu_x2(input_layer=pool4, filters=1024)
-        up5 = up_conv_bn_relu_cat(input_layer=block5, concat_layer=drop4, filters=512)
+        drop5 = Dropout(0.5)(block5)
+        up5 = up_conv_bn_relu_cat(input_layer=drop5, concat_layer=drop4, filters=512)
         # =========================================================================
         block6 = conv_bn_relu_x2(input_layer=up5, filters=512)
         up6 = up_conv_bn_relu_cat(input_layer=block6, concat_layer=drop3, filters=256)
@@ -198,31 +201,36 @@ class EggCountNet(object):
     def buildModel_U_net_7block(self, pre_trained_weights: str = None):
         # experimenting with different U-net depths
         inputs = Input((self.img_rows, self.img_cols, 3))
+        drop_in = Dropout(0.1)(inputs)
         # =========================================================================
-        block1 = conv_bn_relu_x2(input_layer=inputs, filters=64)
-        pool1 = MaxPooling2D(pool_size=(2, 2))(block1)
+        block1 = conv_bn_relu_x2(input_layer=drop_in, filters=64)
+        drop1 = Dropout(0.5)(block1)
+        pool1 = MaxPooling2D(pool_size=(2, 2))(drop1)
         # =========================================================================
         block2 = conv_bn_relu_x2(input_layer=pool1, filters=128)
         drop2 = Dropout(0.5)(block2)
         pool2 = MaxPooling2D(pool_size=(2, 2))(drop2)
         # =========================================================================
         block3 = conv_bn_relu_x2(input_layer=pool2, filters=256)
-        pool3 = MaxPooling2D(pool_size=(2, 2))(block3)
+        drop3 = Dropout(0.5)(block3)
+        pool3 = MaxPooling2D(pool_size=(2, 2))(drop3)
         # =========================================================================
         block4 = conv_bn_relu_x2(input_layer=pool3, filters=512)
-        up4 = up_conv_bn_relu_cat(input_layer=block4, concat_layer=block3, filters=256)
+        drop4 = Dropout(0.5)(block4)
+        up4 = up_conv_bn_relu_cat(input_layer=drop4, concat_layer=drop3, filters=256)
         # =========================================================================
-        block7 = conv_bn_relu_x2(input_layer=up4, filters=256)
-        drop7 = Dropout(0.5)(block7)
-        up7 = up_conv_bn_relu_cat(input_layer=drop7, concat_layer=block2, filters=128)
+        block5 = conv_bn_relu_x2(input_layer=up4, filters=256)
+        drop5 = Dropout(0.5)(block5)
+        up5 = up_conv_bn_relu_cat(input_layer=drop5, concat_layer=drop2, filters=128)
         # =========================================================================
-        block8 = conv_bn_relu_x2(input_layer=up7, filters=128)
-        up8 = up_conv_bn_relu_cat(input_layer=block8, concat_layer=block1, filters=64)
+        block6 = conv_bn_relu_x2(input_layer=up5, filters=128)
+        drop6 = Dropout(0.5)(block6)
+        up6 = up_conv_bn_relu_cat(input_layer=drop6, concat_layer=drop1, filters=64)
         # =========================================================================
-        block9 = conv_bn_relu_x2(input_layer=up8, filters=64)
+        block7 = conv_bn_relu_x2(input_layer=up6, filters=64)
         # =========================================================================
         density_pred = Convolution2D(filters=1, kernel_size=1, activation='relu', padding='same',
-                                     kernel_initializer='he_normal', use_bias=False)(block9)
+                                     kernel_initializer='he_normal', use_bias=False)(block7)
         # =========================================================================
         model = Model(inputs=inputs, outputs=density_pred)
         optim = Adam()
@@ -265,7 +273,8 @@ class EggCountNet(object):
 
     def train(self, model_file):
         print("Loading data...")
-        X, Y, n_sub_imgs = load_data()
+        # X, Y, n_sub_imgs = load_data_dir()
+        X, Y, n_sub_imgs = load_data_npy()
 
         print("Loading data done")
 
@@ -286,11 +295,7 @@ class EggCountNet(object):
 
         def scheduler(epoch):
             lr_init = 1e-4
-            ep_switch = 10
-            if epoch < ep_switch:
-                return lr_init
-            else:
-                return lr_init * np.power(0.95, epoch - ep_switch)
+            return lr_init * np.power(0.975, epoch)     # 2.5% LR drop per epoch
 
         model_learning_rate = LearningRateScheduler(scheduler, verbose=1)
         model_checkpoint = ModelCheckpoint(model_file, monitor='loss', verbose=1, save_best_only=True)
@@ -299,7 +304,7 @@ class EggCountNet(object):
         # batch_size limited to 1 due to my own GPU's memory limitations
         # log_dir = "logs/fit/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
         # tensorboard_callback = TensorBoard(log_dir=log_dir, histogram_freq=1)
-        history = model.fit(X, Y, batch_size=1, validation_split=0.2, epochs=200, verbose=0,
+        history = model.fit(X, Y, batch_size=1, validation_split=0.1, epochs=100, verbose=2,
                             shuffle=True, callbacks=[model_checkpoint, model_learning_rate])
 
         # plot loss during training

@@ -185,7 +185,7 @@ def generate_density_map(img, coor):
     """
     coor = coor.astype(int)  # round to int
     # initialise density map of size image - only 1 channel
-    density_map = np.zeros((img.shape[0], img.shape[1]), dtype=np.float32)
+    density_map = np.zeros((img.shape[0], img.shape[1]), dtype=np.uint8)
 
     # applying heat of 100 at location of eggs
     if coor.size > 0:
@@ -465,17 +465,21 @@ def get_image_path():
     return image_path
 
 
-def load_data(directory: str = 'egg_photos/originals', resolution: str = "360p"):
+def process_load_data_dir(directory: str = 'egg_photos/originals', resolution: str = "360p"):
     """
-    Load training images (X_train) and normalises them, as well as their density map (y_train)
+    Given directory, loads images (X) and their corresponding density maps (Y), splits them into sub-images of defined
+        resolution, filters out sub-images with no eggs in them to speed up training process, normalises the sub-images,
+        return list of sub-images, their density maps, and an array to track how many sub-images were sampled from each
+        full image.
     Args:
 
     Returns:
         X (list of images):     training images (n examples, h, w, RGB)
-        Y (list of images):     density maps of training images (n examples, h, w)
+        Y (list of images):     density maps of training images (n examples, h, w, 1)
         num_sub_imgs (array):   array of number of sub-images that the initial image was split into
     """
     files = get_file_list(directory, ".JPG")
+    np.random.shuffle(files)    # shuffling inputs to decrease bias in training
     res_tuple = res[resolution]     # default (480, 360)
     down_res_factor = 3.    # originals are in 4912x7360 resolution, eggs are still discernible at 1/9th resolution
     X = np.empty((0, res_tuple[1], res_tuple[0], 3), dtype=np.uint8)
@@ -507,6 +511,19 @@ def load_data(directory: str = 'egg_photos/originals', resolution: str = "360p")
     return X, Y, num_sub_imgs
 
 
+def load_data_npy():
+    X = np.load('X.npy')
+    Y = np.load('Y.npy')
+    n_sub_imgs = np.load('nsi.npy')
+    return X, Y, n_sub_imgs
+
+
+def save_data_npy(X, Y, nsi):
+    np.save('X.npy', X)
+    np.save('Y.npy', Y)
+    np.save('nsi.npy', nsi)
+
+
 def sum_density_over_sub_images(Y, n_sub_images):
     """
     Sums density maps of sub-images to return the number of eggs within each full image
@@ -520,7 +537,7 @@ def sum_density_over_sub_images(Y, n_sub_images):
     n_eggs = np.zeros(n_sub_images.shape[0])
     ind_start = 0
     for i in range(n_sub_images.shape[0]):
-        n_eggs[i] = int(np.sum(Y[ind_start:ind_start+n_sub_images[i]]) / 100)
+        n_eggs[i] = int(np.round(np.sum(Y[ind_start:ind_start+n_sub_images[i]]) / 100))
         ind_start += n_sub_images[i]
     return n_eggs
 

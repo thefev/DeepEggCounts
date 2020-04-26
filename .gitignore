@@ -7,3 +7,4 @@ temp.py
 *.dmap
 *_dmap.txt
 *.txt
+*.npy
