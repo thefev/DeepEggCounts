@@ -21,7 +21,7 @@ from data import *
 # TODO:
 #   - load model properly in predict - get last loss
 #   - envelope network with UI
-#   -  multiple image inputs for predictions
+#   - multiple image inputs for predictions
 
 
 def get_model_memory_usage(batch_size, model):

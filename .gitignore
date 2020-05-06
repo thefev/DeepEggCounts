@@ -1,7 +1,11 @@
-log.txt
-temp.py
+.git/
+.idea/
+__pycache__/
+egg_photos/
+.gitignore
 *.h5
 *.jpg
+*.png
 *.JPG
 *.hdf5
 *.dmap

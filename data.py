@@ -21,11 +21,11 @@ from scipy.ndimage import gaussian_filter
 from tqdm import tqdm
 from os.path import exists
 
-# TODO: - change load_data methods to take/request directory input and search term (maybe train:val ratio too)
+# TODO:
 #       - divide and conquer approach
 #           - adjust data loading to cope with splitting image
 #               - load full images, split into sub-images with corresponding coor and dmap - do on the fly, no saving
-#               - rescale to 1/9th of full image leaves sufficient details for human eye ~ about the Baysian limit
+#       -
 
 res = {"240p": (320, 240),
        "360p": (480, 360),
