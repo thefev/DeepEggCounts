@@ -22,6 +22,7 @@ from data import *
 #   - load model properly in predict - get last loss
 #   - envelope network with UI
 #   - multiple image inputs for predictions
+#   - split input image for processing
 
 
 def get_model_memory_usage(batch_size, model):
@@ -273,7 +274,6 @@ class EggCountNet(object):
 
     def train(self, model_file):
         print("Loading data...")
-        # X, Y, n_sub_imgs = load_data_dir()
         X, Y, n_sub_imgs = load_data_npy()
 
         print("Loading data done")
@@ -304,7 +304,7 @@ class EggCountNet(object):
         # batch_size limited to 1 due to my own GPU's memory limitations
         # log_dir = "logs/fit/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
         # tensorboard_callback = TensorBoard(log_dir=log_dir, histogram_freq=1)
-        history = model.fit(X, Y, batch_size=1, validation_split=0.1, epochs=100, verbose=2,
+        history = model.fit(X, Y, batch_size=1, validation_split=0.1, epochs=100, verbose=1,
                             shuffle=True, callbacks=[model_checkpoint, model_learning_rate])
 
         # plot loss during training
@@ -319,7 +319,7 @@ class EggCountNet(object):
 
 if __name__ == '__main__':
     eggstimator = EggCountNet()
-    model_file = 'model_unet7.h5'
+    model_file = 'model_unet9.h5'
     eggstimator.train(model_file)
     # validate_test(model_file)
     # predict_input(model_file)

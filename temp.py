@@ -1,6 +1,8 @@
 import cv2
 import numpy as np
 import data
+from skimage import feature
+import matplotlib.pyplot as plt
 
 X, Y, nsi = data.process_load_data_dir()
 data.save_data_npy(X, Y, nsi)
@@ -10,3 +12,4 @@ data.save_data_npy(X, Y, nsi)
 #     if np.sum(Y[r]) > 0:
 #         data.heat_map(X[r], Y[r])
 #         i += 1
+

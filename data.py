@@ -25,7 +25,7 @@ from os.path import exists
 #       - divide and conquer approach
 #           - adjust data loading to cope with splitting image
 #               - load full images, split into sub-images with corresponding coor and dmap - do on the fly, no saving
-#       -
+#       - data aug. - rotation, flip, distortions
 
 res = {"240p": (320, 240),
        "360p": (480, 360),
@@ -185,7 +185,7 @@ def generate_density_map(img, coor):
     """
     coor = coor.astype(int)  # round to int
     # initialise density map of size image - only 1 channel
-    density_map = np.zeros((img.shape[0], img.shape[1]), dtype=np.uint8)
+    density_map = np.zeros((img.shape[0], img.shape[1]), dtype=np.float32)
 
     # applying heat of 100 at location of eggs
     if coor.size > 0:
@@ -193,7 +193,8 @@ def generate_density_map(img, coor):
             density_map[coor[i, 1], coor[i, 0]] += 100
 
     # apply Gaussian kernel to density map
-    density_map = gaussian_filter(density_map, sigma=(1, 1), order=0)
+    cv2.GaussianBlur(density_map, (1, 1), 0)
+    # density_map = gaussian_filter(density_map, sigma=(1, 1), order=0)
     return density_map
 
 
@@ -479,9 +480,10 @@ def process_load_data_dir(directory: str = 'egg_photos/originals', resolution: s
         num_sub_imgs (array):   array of number of sub-images that the initial image was split into
     """
     files = get_file_list(directory, ".JPG")
-    np.random.shuffle(files)    # shuffling inputs to decrease bias in training
+    np.random.shuffle(files)        # shuffling inputs to decrease bias in training
     res_tuple = res[resolution]     # default (480, 360)
-    down_res_factor = 3.    # originals are in 4912x7360 resolution, eggs are still discernible at 1/9th resolution
+    # down-scaling inputs (optional) - originals are 4912x7360, eggs are still discernible at 1/9th resolution
+    down_res_factor = 1.
     X = np.empty((0, res_tuple[1], res_tuple[0], 3), dtype=np.uint8)
     Y = np.empty((0, res_tuple[1], res_tuple[0]), dtype=np.float32)
     num_sub_imgs = np.empty(0, dtype=np.uint8)
@@ -491,7 +493,7 @@ def process_load_data_dir(directory: str = 'egg_photos/originals', resolution: s
         coor = yolo_to_xy(yolo_coor, img.shape[0:2])
         img_resc, rf = image_rescale(img, (int(img.shape[0]/down_res_factor), int(img.shape[1]/down_res_factor)))
         coor_resc = coor_rescale(coor, rf)
-        sub_images, dmaps = split_image_dmap(img_resc, coor_resc, resolution)
+        sub_images, dmaps = split_rot_image_dmap(img_resc, coor_resc, resolution)
 
         # loading only sub-images with eggs
         n_with_eggs = 0
@@ -561,7 +563,7 @@ def get_file_list(path: str, search_term: str):
     return files
 
 
-def split_image(image, resolution: str = "360p"):
+def split_rot_image(image, resolution: str = "360p"):
     """
     Takes in larger image and converts it to multiple sub-image with minimal resolution loss.
     Args:
@@ -600,7 +602,7 @@ def split_image(image, resolution: str = "360p"):
     return sub_images
 
 
-def split_image_dmap(image, coor, resolution: str = "360p"):
+def split_rot_image_dmap(image, coor, resolution: str = "360p"):
     """
     Takes in larger image and converts it to multiple sub-image with minimal resolution loss.
     Args:
@@ -609,7 +611,7 @@ def split_image_dmap(image, coor, resolution: str = "360p"):
         resolution (str):       desired output sub-image resolution, default: "360p" = (480, 360)
     Returns:
         sub_images (ndarray):   ndarray of shape (# sub-images, (resolution), 3)
-        dmaps (ndarray):        density maps of sub-images (# sub-images, (resolution))
+        sub_dmaps (ndarray):        density maps of sub-images (# sub-images, (resolution))
     """
     img_dim = image.shape  # (h, w, 3)
     res_dim = res[resolution]  # (w, h)
@@ -634,19 +636,59 @@ def split_image_dmap(image, coor, resolution: str = "360p"):
         sub_images = np.zeros(shape=(1, res_dim[1], res_dim[0], 3), dtype="uint8")
         sub_images[0], rf = image_rescale(image, res_dim)
         coor_resc = coor_rescale(coor, rf)
-        dmaps = np.zeros(shape=(1, res_dim[1], res_dim[0]), dtype=np.float32)
-        dmaps[0] = generate_density_map(sub_images[0], coor_resc)
+        sub_dmaps = np.zeros(shape=(1, res_dim[1], res_dim[0]), dtype=np.float32)
+        sub_dmaps[0] = generate_density_map(sub_images[0], coor_resc)
         print("Image was re-scaled, but could not be broken down into sub-images.")
     else:
         sub_images = np.zeros(shape=(n_sub_img_hw_hw, res_dim[1], res_dim[0], 3), dtype="uint8")
         img_resc, rf = image_rescale(image, (res_dim[0] * n_img_w_by_res_w, res_dim[1] * n_img_h_by_res_h))
         coor_resc = coor_rescale(coor, rf)
         dmap = generate_density_map(img_resc, coor_resc)
-        dmaps = np.zeros(shape=(n_sub_img_hw_hw, res_dim[1], res_dim[0]), dtype=np.float32)
+        sub_dmaps = np.zeros(shape=(n_sub_img_hw_hw, res_dim[1], res_dim[0]), dtype=np.float32)
         for i in range(n_img_h_by_res_h):
             for j in range(n_img_w_by_res_w):
                 sub_images[i * n_img_w_by_res_w + j] = img_resc[i * res_dim[1]:(i + 1) * res_dim[1],
                                                                 j * res_dim[0]:(j + 1) * res_dim[0]]
-                dmaps[i * n_img_w_by_res_w + j] = dmap[i * res_dim[1]:(i + 1) * res_dim[1],
-                                                       j * res_dim[0]:(j + 1) * res_dim[0]]
-    return sub_images, dmaps
+                sub_dmaps[i * n_img_w_by_res_w + j] = dmap[i * res_dim[1]:(i + 1) * res_dim[1],
+                                                           j * res_dim[0]:(j + 1) * res_dim[0]]
+    return sub_images, sub_dmaps
+
+
+def split_image_dmap(image, coor, resolution: str = "360p"):
+    """
+    Takes in image and its egg coordinates and converts them into multiple sub-images and sub-density-maps.
+    Args:
+        image (ndarray):        input image to be broken down (h, w, RGB)
+        coor (ndarray):         egg coordinates info in (x, y) format (# eggs, 2)
+        resolution (str):       desired output sub-image resolution, default: "360p" = (480, 360)
+    Returns:
+        sub_images (ndarray):   ndarray of shape (# sub-images, (resolution), 3)
+        sub_dmaps (ndarray):    density maps of sub-images (# sub-images, (resolution))
+    """
+    img_dim = image.shape  # (h, w, 3)
+    res_dim = res[resolution]  # (w, h)
+
+    n_sub_img_h = int(np.floor(img_dim[0] / res_dim[1]))  # times sub-image height can fit in image's height
+    n_sub_img_w = int(np.floor(img_dim[1] / res_dim[0]))  # times sub-image width can fit in image's width
+    n_sub_imgs = n_sub_img_h * n_sub_img_w  # number of sub-images if image is split by h/h & w/w
+
+    if n_sub_imgs <= 1:  # image cannot be broken down further
+        sub_images = np.zeros(shape=(1, res_dim[1], res_dim[0], 3), dtype="uint8")
+        sub_images[0], rf = image_rescale(image, res_dim)
+        coor_resc = coor_rescale(coor, rf)
+        sub_dmaps = np.zeros(shape=(1, res_dim[1], res_dim[0]), dtype=np.float32)
+        sub_dmaps[0] = generate_density_map(sub_images[0], coor_resc)
+        print("Image was re-scaled, but could not be broken down into sub-images.")
+    else:
+        sub_images = np.zeros(shape=(n_sub_imgs, res_dim[1], res_dim[0], 3), dtype="uint8")
+        img_resc, rf = image_rescale(image, (res_dim[0] * n_sub_img_w, res_dim[1] * n_sub_img_h))
+        coor_resc = coor_rescale(coor, rf)
+        dmap = generate_density_map(img_resc, coor_resc)
+        sub_dmaps = np.zeros(shape=(n_sub_imgs, res_dim[1], res_dim[0]), dtype=np.float32)
+        for i in range(n_sub_img_h):
+            for j in range(n_sub_img_w):
+                sub_images[i * n_sub_img_w + j] = img_resc[i * res_dim[1]:(i + 1) * res_dim[1],
+                                                           j * res_dim[0]:(j + 1) * res_dim[0]]
+                sub_dmaps[i * n_sub_img_w + j] = dmap[i * res_dim[1]:(i + 1) * res_dim[1],
+                                                      j * res_dim[0]:(j + 1) * res_dim[0]]
+    return sub_images, sub_dmaps
