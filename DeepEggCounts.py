@@ -310,7 +310,7 @@ class EggCountNet(object):
         # plot loss during training
         plt.title('Loss / Mean Squared Error')
         plt.plot(history.history['loss'], label='train')
-        plt.plot(history.history['val_loss'], label='test')
+        plt.plot(history.history['val_loss'], label='test.py')
         plt.legend()
         plt.show()
 
