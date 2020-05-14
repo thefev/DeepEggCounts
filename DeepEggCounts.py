@@ -294,8 +294,7 @@ class EggCountNet(object):
         # get_model_memory_usage(1, model)
 
         def scheduler(epoch):
-            lr_init = 1e-4
-            return lr_init * np.power(0.975, epoch)     # 2.5% LR drop per epoch
+            return 10e-4 * np.power(0.975, epoch)     # 2.5% LR drop per epoch
 
         model_learning_rate = LearningRateScheduler(scheduler, verbose=1)
         model_checkpoint = ModelCheckpoint(model_file, monitor='loss', verbose=1, save_best_only=True)
@@ -304,13 +303,13 @@ class EggCountNet(object):
         # batch_size limited to 1 due to my own GPU's memory limitations
         # log_dir = "logs/fit/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
         # tensorboard_callback = TensorBoard(log_dir=log_dir, histogram_freq=1)
-        history = model.fit(X, Y, batch_size=1, validation_split=0.1, epochs=100, verbose=1,
+        history = model.fit(X, Y, batch_size=1, validation_split=0.1, epochs=50, verbose=1,
                             shuffle=True, callbacks=[model_checkpoint, model_learning_rate])
 
         # plot loss during training
         plt.title('Loss / Mean Squared Error')
         plt.plot(history.history['loss'], label='train')
-        plt.plot(history.history['val_loss'], label='test.py')
+        plt.plot(history.history['val_loss'], label='test')
         plt.legend()
         plt.show()
 
