@@ -2,8 +2,9 @@ import cv2
 import numpy as np
 import matplotlib.pyplot as plt
 import data
-
-# X, Y, nsi = data.process_load_data_dir(directory='./egg_photos/test/')
+# import keras
+# from keras.models import *
+# from keras.layers import *
 
 # yolo = np.loadtxt('./test.txt')
 # img = cv2.imread('./test.jpg')
@@ -11,15 +12,20 @@ import data
 # dmap = data.generate_density_map(img, coor)
 # data.heat_map(img, dmap)
 
-X, Y, nsi = data.process_load_data_dir()
-data.save_data_npy(X, Y, nsi)
+# X, Y, nsi = data.process_load_data_dir()
+# data.save_data_npy(X, Y, nsi)
 
-# X, Y, nsi = data.load_data_npy()
-# i = 0
-# while i < 10:
+X, Y, nsi = data.load_data_npy()
+for i in range(10):
+    r = np.random.randint(X.shape[0])
+    data.heat_map(X[r], Y[r])
+
+# X, Y, nsi = data.process_load_data_dir(e2e=True)
+# data.save_data_npy(X, Y, nsi, e2e=True)
+#
+# X, Y, nsi = data.load_data_npy(e2e=True)
+# for i in range(10):
 #     r = np.random.randint(X.shape[0])
-#     if np.sum(Y[r]) > 0:
-#         data.heat_map(X[r], Y[r])
-#         i += 1
-
-
+#     plt.figure()
+#     plt.imshow(X[r])
+#     print('Img:\t' + str(i+1) + '\tEggs:\t' + str(Y[r]))

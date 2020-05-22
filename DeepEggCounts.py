@@ -19,10 +19,10 @@ from keras.layers import *
 from keras.optimizers import *
 from data import *
 # TODO:
-#   - load model properly in predict - get last loss
+#   - output of nn to grayscale and use blob LoG detection
+#       skimage.feature.blob_log(img, min_sigma=3, max_sigma=7, num_sigma=1, threshold=0.05)
 #   - envelope network with UI
 #   - multiple image inputs for predictions
-#   - split input image for processing
 
 
 def get_model_memory_usage(batch_size, model):
@@ -99,7 +99,7 @@ def up_conv_bn_relu_cat(input_layer, concat_layer, filters):
     return block
 
 
-def validate_test(model_file: str = 'model_unet9.h5'):
+def validate_test(model_file: str = 'model_u_net_9.h5'):
     if exists(model_file):
         model = load_model(model_file)
     else:
@@ -108,7 +108,6 @@ def validate_test(model_file: str = 'model_unet9.h5'):
 
     print('-' * 100)
     print('Train and Validation set:')
-    # X, Y, n_sub_imgs = load_data_dir()
     X, Y, n_sub_imgs = load_data_npy()
     Y_pred = model.predict(X, batch_size=3, verbose=1)
     error_total = 0
@@ -127,7 +126,7 @@ def validate_test(model_file: str = 'model_unet9.h5'):
         heat_map(X[rn], Y_pred[rn])
 
 
-def predict_input(model_file: str = 'model_unet9.h5'):
+def predict_input(model_file: str = 'model_u_net_9.h5'):
     if exists(model_file):
         model = load_model(model_file)
     else:
@@ -148,12 +147,12 @@ def catch_div_by_zero(n, d):
     return 0 if d == 0 else n / d
 
 
-class EggCountNet(object):
+class DeepEggCounts(object):
     def __init__(self, img_rows=360, img_cols=480):
         self.img_rows = img_rows
         self.img_cols = img_cols
 
-    def buildModel_U_net_9block(self, pre_trained_weights: str = None):
+    def build_u_net_9(self, pre_trained_weights: str = None):
         # experimenting with different U-net depths
         inputs = Input((self.img_rows, self.img_cols, 3))
         # =========================================================================
@@ -193,13 +192,13 @@ class EggCountNet(object):
         # =========================================================================
         model = Model(inputs=inputs, outputs=density_pred)
         optim = Adam()
-        model.compile(optimizer=optim, loss='mean_squared_error')
+        model.compile(optimizer=optim, loss='mean_squared_error', metrics=['acc'])
         if pre_trained_weights:
             model.load_weights(pre_trained_weights)
             print('weights loaded')
         return model
 
-    def buildModel_U_net_7block(self, pre_trained_weights: str = None):
+    def build_u_net_7(self, pre_trained_weights: str = None):
         # experimenting with different U-net depths
         inputs = Input((self.img_rows, self.img_cols, 3))
         drop_in = Dropout(0.1)(inputs)
@@ -241,7 +240,7 @@ class EggCountNet(object):
             print('weights loaded')
         return model
 
-    def buildModel_U_net_5block(self, pre_trained_weights: str = None):
+    def build_u_net_5(self, pre_trained_weights: str = None):
         # experimenting with different U-net depths
         inputs = Input((self.img_rows, self.img_cols, 3))
         # =========================================================================
@@ -265,16 +264,21 @@ class EggCountNet(object):
                                      kernel_initializer='he_normal', use_bias=False)(block5)
         # =========================================================================
         model = Model(inputs=inputs, outputs=density_pred)
-        optim = Adam()
+        optim = SGD(lr=1e-4, momentum=0.9)
         model.compile(optimizer=optim, loss='mean_squared_error', metrics=['acc'])
         if pre_trained_weights:
             model.load_weights(pre_trained_weights)
             print('weights loaded')
         return model
 
-    def train(self, model_file):
+    def train(self, model_file: str = ''):
         print("Loading data...")
-        X, Y, n_sub_imgs = load_data_npy()
+        if 'e2e' in model_file:
+            X, Y, n_sub_imgs = load_data_npy(e2e=True)
+        else:
+            X, Y, n_sub_imgs = load_data_npy()
+        X = X[:20]
+        Y = Y[:20]
 
         print("Loading data done")
 
@@ -282,29 +286,33 @@ class EggCountNet(object):
             model = load_model(model_file)
             print("Got U-net:\t" + model_file)
         else:
-            if model_file == 'model_unet5.h5':
-                model = self.buildModel_U_net_5block()
-            elif model_file == 'model_unet7.h5':
-                model = self.buildModel_U_net_7block()
-            elif model_file == 'model_unet9.h5':
-                model = self.buildModel_U_net_9block()
+            if model_file == 'model_u_net_5.h5':
+                model = self.build_u_net_5()
+            elif model_file == 'model_u_net_7.h5':
+                model = self.build_u_net_7()
+            elif model_file == 'model_u_net_9.h5':
+                model = self.build_u_net_9()
+            elif model_file == 'model_u_net_5_e2e.h5':
+                model = self.build_u_net_5_e2e()
             print("Built U-net:\t" + model_file)
 
-        model.summary()
+        # model.summary()
         # get_model_memory_usage(1, model)
 
+        # Callbacks
         def scheduler(epoch):
             return 10e-4 * np.power(0.975, epoch)     # 2.5% LR drop per epoch
-
         model_learning_rate = LearningRateScheduler(scheduler, verbose=1)
         model_checkpoint = ModelCheckpoint(model_file, monitor='loss', verbose=1, save_best_only=True)
-        print('Fitting model...')
-
-        # batch_size limited to 1 due to my own GPU's memory limitations
         # log_dir = "logs/fit/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
         # tensorboard_callback = TensorBoard(log_dir=log_dir, histogram_freq=1)
-        history = model.fit(X, Y, batch_size=1, validation_split=0.1, epochs=50, verbose=1,
-                            shuffle=True, callbacks=[model_checkpoint, model_learning_rate])
+
+        # batch_size limited to 1 due to my own GPU's memory limitations
+        print('Fitting model...')
+        history = model.fit(X, Y, batch_size=1, validation_split=0.1, epochs=50, verbose=1, shuffle=True,
+                            initial_epoch=0,
+                            # steps_per_epoch=500, validation_steps=100,
+                            callbacks=[model_checkpoint])
 
         # plot loss during training
         plt.title('Loss / Mean Squared Error')
@@ -317,8 +325,8 @@ class EggCountNet(object):
 
 
 if __name__ == '__main__':
-    eggstimator = EggCountNet()
-    model_file = 'model_unet9.h5'
-    eggstimator.train(model_file)
-    # validate_test(model_file)
+    eggstimator = DeepEggCounts()
+    model_file = 'model_u_net_9.h5'
+    # eggstimator.train(model_file)
+    validate_test(model_file)
     # predict_input(model_file)

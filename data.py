@@ -2,13 +2,13 @@
 """
 Created on Thu Feb 13 11:11:52 2020
 
-@author: Kevin
+@author: Kevin Yost
 
 Various methods used for image pre- and post-processing.
 
 Potential future work: alter generate_density_map to deal with dessicated eggs - read in class type, draw healthy eggs
-    on first channel and dessicated on second channel. Will require higher resolution image (current default of 480p
-    is insufficient to distinguish between the two cases), modifying and re-training EggCountNet for two output classes.
+    on first channel and dessicated on second channel. Will require modifying and re-training DeepEggCounts for two output
+    classes.
 """
 import os
 import cv2
@@ -19,12 +19,6 @@ import tkinter as tk
 from tkinter import filedialog
 from tqdm import tqdm
 from os.path import exists
-
-# TODO:
-#       - divide and conquer approach
-#           - adjust data loading to cope with splitting image
-#               - load full images, split into sub-images with corresponding coor and dmap - do on the fly, no saving
-#       - data aug. - rotation, flip, distortions
 
 res = {"240p": (320, 240),
        "360p": (480, 360),
@@ -171,7 +165,7 @@ def draw_points_on_image(image, coordinates):
     return None
 
 
-def generate_density_map(img, coor, coor_format: str = 'xy'):
+def generate_density_map(img, coor):
     """
     Generate a density map based on objects positions.
 
@@ -192,7 +186,7 @@ def generate_density_map(img, coor, coor_format: str = 'xy'):
             density_map[coor[i, 1], coor[i, 0]] += 100
 
     # apply Gaussian kernel to density map
-    density_map = cv2.GaussianBlur(density_map, ksize=(0, 0), sigmaX=1, sigmaY=1)
+    density_map = cv2.GaussianBlur(density_map, (5, 5), 0)  # kernel size of 5, standard deviation of 0
 
     density_map = density_map[..., np.newaxis]  # adding final filter axis
     return density_map
@@ -470,7 +464,7 @@ def get_image_path():
     return image_path
 
 
-def process_load_data_dir(directory: str = './egg_photos/originals', resolution: str = "360p"):
+def process_load_data_dir(e2e: bool = False, directory: str = './egg_photos/originals', resolution: str = "360p"):
     """
     Given directory, loads images (X) and their corresponding density maps (Y), splits them into sub-images of defined
         resolution, filters out sub-images with no eggs in them to speed up training process, normalises the sub-images,
@@ -478,6 +472,7 @@ def process_load_data_dir(directory: str = './egg_photos/originals', resolution:
         full image.
 
     Args:
+        e2e (bool):             end-to-end - will output Y as number of eggs instead of mask of Gaussian map
         directory (str):        location in directory where images and coordinates to be processed are location
         resolution (str):       resolution which sub-images should be, default: "360p"
 
@@ -489,10 +484,14 @@ def process_load_data_dir(directory: str = './egg_photos/originals', resolution:
     files = get_file_list(directory, ".JPG")
     np.random.shuffle(files)        # shuffling inputs to decrease bias in training
     res_tuple = res[resolution]     # default (480, 360)
-    # down-scaling inputs (optional) - originals are 4912x7360, eggs are still discernible at 1/9th resolution
+
+    # down-scaling inputs (optional) - originals are 4912x7360, eggs are still discernible at 1/9th resolution (drf=3)
     down_res_factor = 3.
     X = np.empty((0, res_tuple[1], res_tuple[0], 3), dtype=np.uint8)
-    Y = np.empty((0, res_tuple[1], res_tuple[0], 1), dtype=np.float32)
+    if not e2e:
+        Y = np.empty((0, res_tuple[1], res_tuple[0], 1), dtype=np.float32)
+    elif e2e:
+        Y = np.empty(0, dtype=np.float32)
     num_sub_imgs = np.empty(0, dtype=np.uint8)
     for f in tqdm(files):
         img = cv2.imread(f)
@@ -511,36 +510,50 @@ def process_load_data_dir(directory: str = './egg_photos/originals', resolution:
             for j in range(sub_dmaps.shape[0]):
                 if np.sum(sub_dmaps[j]) > 0:
                     X = np.append(X, sub_images[j:j+1], axis=0)
-                    Y = np.append(Y, sub_dmaps[j:j+1], axis=0)
+                    if not e2e:
+                        Y = np.append(Y, sub_dmaps[j:j+1], axis=0)
+                    elif e2e:
+                        Y = np.append(Y, np.sum(sub_dmaps[j]) / 100)
                     n_with_eggs += 1
             num_sub_imgs = np.append(num_sub_imgs, n_with_eggs)
+    if e2e:
+        Y = Y[..., np.newaxis]
     assert X.shape[0] == Y.shape[0], "Loaded data are not of equal length: X != Y"
 
-    # normalising
     X = X.astype('float32')
     Y = Y.astype('float32')
-    X /= 255.
+    X /= 255.   # normalising inputs
     return X, Y, num_sub_imgs
 
 
-def load_data_npy():
-    X = np.load('X.npy')
-    Y = np.load('Y.npy')
-    n_sub_imgs = np.load('nsi.npy')
+def load_data_npy(e2e: bool = False):
+    if not e2e:
+        X = np.load('X.npy')
+        Y = np.load('Y.npy')
+        n_sub_imgs = np.load('nsi.npy')
+    else:
+        X = np.load('X_e2e.npy')
+        Y = np.load('Y_e2e.npy')
+        n_sub_imgs = np.load('nsi_e2e.npy')
     return X, Y, n_sub_imgs
 
 
-def save_data_npy(X, Y, nsi):
-    np.save('X.npy', X)
-    np.save('Y.npy', Y)
-    np.save('nsi.npy', nsi)
+def save_data_npy(X, Y, nsi, e2e: bool = False):
+    if not e2e:
+        np.save('X.npy', X)
+        np.save('Y.npy', Y)
+        np.save('nsi.npy', nsi)
+    else:
+        np.save('X_e2e.npy', X)
+        np.save('Y_e2e.npy', Y)
+        np.save('nsi_e2e.npy', nsi)
 
 
 def sum_density_over_sub_images(Y, n_sub_images):
     """
     Sums density maps of sub-images to return the number of eggs within each full image
     Args:
-        Y (array):                    density map of each sub-image (n sub-images, h, w, 1)
+        Y (array):                    density map of each sub-image (# sub-images, h, w, 1)
         n_sub_images (array of int):    array of number of sub-images within each full-image
 
     Returns:
@@ -652,7 +665,7 @@ def split_rot_image_dmap(image, coor, resolution: str = "360p"):
         coor_resc = coor_rescale(coor, rf)
         sub_dmaps = np.zeros(shape=(1, res_dim[1], res_dim[0], 1), dtype=np.float32)
         sub_dmaps[0] = generate_density_map(sub_images[0], coor_resc)
-        print("Image was re-scaled, but could not be broken down into sub-images.")
+        # print("Image was re-scaled, but could not be broken down into sub-images.")
     else:
         sub_images = np.zeros(shape=(n_sub_img_hw_hw, res_dim[1], res_dim[0], 3), dtype="uint8")
         img_resc, rf = image_rescale(image, (res_dim[0] * n_img_w_by_res_w, res_dim[1] * n_img_h_by_res_h))
@@ -694,7 +707,7 @@ def split_image_dmap(image, coor, resolution: str = "360p"):
         coor_resc = coor_rescale(coor, rf)
         sub_dmaps = np.zeros(shape=(1, res_dim[1], res_dim[0], 1), dtype=np.float32)
         sub_dmaps[0] = generate_density_map(sub_images[0], coor_resc)
-        print("Image was re-scaled, but could not be broken down into sub-images.")
+        # print("Image was re-scaled, but could not be broken down into sub-images.")
     else:
         sub_images = np.zeros(shape=(n_sub_imgs, res_dim[1], res_dim[0], 3), dtype="uint8")
         img_resc, rf = image_rescale(image, (res_dim[0] * n_sub_img_w, res_dim[1] * n_sub_img_h))
