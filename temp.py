@@ -12,13 +12,11 @@ import data
 # dmap = data.generate_density_map(img, coor)
 # data.heat_map(img, dmap)
 
-# X, Y, nsi = data.process_load_data_dir()
+X, Y, nsi = data.process_load_data_dir()
 # data.save_data_npy(X, Y, nsi)
 
-X, Y, nsi = data.load_data_npy()
-for i in range(10):
-    r = np.random.randint(X.shape[0])
-    data.heat_map(X[r], Y[r])
+# X, Y, nsi = data.load_data_npy()
+# data.sample_xy(5, X, Y)
 
 # X, Y, nsi = data.process_load_data_dir(e2e=True)
 # data.save_data_npy(X, Y, nsi, e2e=True)
@@ -29,3 +27,4 @@ for i in range(10):
 #     plt.figure()
 #     plt.imshow(X[r])
 #     print('Img:\t' + str(i+1) + '\tEggs:\t' + str(Y[r]))
+

@@ -24,7 +24,8 @@ res = {"240p": (320, 240),
        "360p": (480, 360),
        "480p": (640, 480),
        "720p": (960, 720),
-       "1080p": (1440, 1080)}
+       "1080p": (1440, 1080),
+       "256": (256, 256)}
 cropping = False
 cropped = False
 x_start, y_start, x_end, y_end = 0, 0, 0, 0
@@ -140,31 +141,6 @@ def coor_crop_shift(original_coordinates, cropped_image_corners):
     return cropped_coordinates
 
 
-def draw_points_on_image(image, coordinates):
-    """
-    Sanity check: draws dot on image at location of egg
-
-    Args:
-        image (array):          image (h, w, 3)
-        coordinates (array):    coordinates (# eggs, 2)
-
-    Returns:
-        None
-    """
-    paint = [0, 255, 0]
-    for i in range(coordinates.shape[0]):
-        image[coordinates[i, 1], coordinates[i, 0]] = paint
-        image[coordinates[i, 1] + 1, coordinates[i, 0]] = paint
-        image[coordinates[i, 1] - 1, coordinates[i, 0]] = paint
-        image[coordinates[i, 1], coordinates[i, 0] + 1] = paint
-        image[coordinates[i, 1], coordinates[i, 0] - 1] = paint
-
-    plt.imshow(image)
-    plt.show()
-
-    return None
-
-
 def generate_density_map(img, coor):
     """
     Generate a density map based on objects positions.
@@ -225,7 +201,7 @@ def cropped_box_shift(corners, desired_aspect_ratio):
     return adjusted_corners
 
 
-def image_crop_and_scale(resolution: str = "360p"):
+def image_crop_and_scale(resolution: str = "256"):
     """
     Prompts user to crop image in the section in which eggs exist. Unless specified, crops to 360p. Saves cropped
         image as .JPG
@@ -280,7 +256,7 @@ def image_crop_and_scale(resolution: str = "360p"):
     cropped_corners = cropped_box_shift(cropped_corners, aspect_ratio)
     # creates cropped image
     image_cropped = image_fit_screen[cropped_corners[0][1]:cropped_corners[1][1],
-                                     cropped_corners[0][0]:cropped_corners[1][0]]
+                    cropped_corners[0][0]:cropped_corners[1][0]]
 
     # Final downscaling to 480p format of both cropped image and coordinates for U-Net to process more easily.
     image_final_res, rf_final_res = image_rescale(image_cropped, res_tuple)
@@ -348,7 +324,7 @@ def image_crop_scale_dmap(resolution: str = "480p", img_path: str = ""):
     cropped_corners = cropped_box_shift(cropped_corners, aspect_ratio)
     [(x_start, y_start), (x_end, y_end)] = cropped_corners
     image_cropped = image_rescaled[cropped_corners[0][1]:cropped_corners[1][1],
-                                   cropped_corners[0][0]:cropped_corners[1][0]]
+                    cropped_corners[0][0]:cropped_corners[1][0]]
     coor_cropped = coor_crop_shift(coor_rescaled, cropped_corners)
 
     # sanity check: ensuring all coordinates are within bounds of cropped image space
@@ -376,7 +352,7 @@ def image_crop_scale_dmap(resolution: str = "480p", img_path: str = ""):
     return img_path, image_final_res, coor_final_res, dmap
 
 
-def image_down_res_dmap(resolution: str = "360p", img_path: str = ""):
+def image_down_res_dmap(resolution: str = "256", img_path: str = ""):
     """
         Prompts user to select an image to crop. Downscales the image to the input resolution (extends smallest
             dimension between height and width to do so). Saves downscaled image with the coordinates of eggs within
@@ -426,22 +402,62 @@ def image_down_res_dmap(resolution: str = "360p", img_path: str = ""):
     return img_path, img_downscaled, coor_downscaled, dmap
 
 
-def heat_map(x_img, y_img):
+def draw_points_on_image(image, coordinates):
+    """
+    Sanity check: draws dot on image at location of egg
+
+    Args:
+        image (array):          image (h, w, 3)
+        coordinates (array):    coordinates (# eggs, 2)
+
+    Returns:
+        None
+    """
+    paint = [0, 255, 0]
+    for i in range(coordinates.shape[0]):
+        image[coordinates[i, 1], coordinates[i, 0]] = paint
+        image[coordinates[i, 1] + 1, coordinates[i, 0]] = paint
+        image[coordinates[i, 1] - 1, coordinates[i, 0]] = paint
+        image[coordinates[i, 1], coordinates[i, 0] + 1] = paint
+        image[coordinates[i, 1], coordinates[i, 0] - 1] = paint
+    plt.imshow(image)
+    plt.show()
+    return None
+
+
+def heat_map(x_img, y_img, y_pred=None):
     """
     Sanity check to visually determine whether an image's density map matches up with ground truth.
 
     Args:
         x_img (array):  normal image of eggs (h, w, 3)
         y_img (array):  density map (h, w, 1)
-
+        y_pred (array): predicted density map (optional) (h, w, 1)
     Returns:
         None
     """
+    plots = 3 if y_pred is not None else 2
     plt.figure()
-    plt.subplot(1, 2, 1)
+    plt.subplot(1, plots, 1)
     plt.imshow(x_img)
-    plt.subplot(1, 2, 2)
+    plt.title('Input Image')
+    plt.subplot(1, plots, 2)
     plt.imshow(y_img[:, :, 0], cmap='plasma')
+    plt.title('Expected Output')
+    if y_pred is not None:
+        plt.subplot(1, plots, 3)
+        plt.imshow(y_pred[:, :, 0], cmap='plasma')
+        plt.title('Predicted Output')
+    plt.show()
+    return None
+
+
+def sample_xy(n: int, x, y, y_p=None):
+    if x.shape[0] < n:
+        n = x.shape[0]
+    for i in range(n):
+        r = np.random.randint(x.shape[0])
+        heat_map(x[r], y[r]) if y_p is None else heat_map(x[r], y[r], y_p[r])
     return None
 
 
@@ -464,7 +480,7 @@ def get_image_path():
     return image_path
 
 
-def process_load_data_dir(e2e: bool = False, directory: str = './egg_photos/originals', resolution: str = "360p"):
+def process_load_data_dir(e2e: bool = False, directory: str = './egg_photos/originals', resolution: str = "256"):
     """
     Given directory, loads images (X) and their corresponding density maps (Y), splits them into sub-images of defined
         resolution, filters out sub-images with no eggs in them to speed up training process, normalises the sub-images,
@@ -482,8 +498,8 @@ def process_load_data_dir(e2e: bool = False, directory: str = './egg_photos/orig
         num_sub_imgs (array):   array of number of sub-images that the initial image was split into
     """
     files = get_file_list(directory, ".JPG")
-    np.random.shuffle(files)        # shuffling inputs to decrease bias in training
-    res_tuple = res[resolution]     # default (480, 360)
+    np.random.shuffle(files)  # shuffling inputs to decrease bias in training
+    res_tuple = res[resolution]
 
     # down-scaling inputs (optional) - originals are 4912x7360, eggs are still discernible at 1/9th resolution (drf=3)
     down_res_factor = 3.
@@ -492,12 +508,23 @@ def process_load_data_dir(e2e: bool = False, directory: str = './egg_photos/orig
         Y = np.empty((0, res_tuple[1], res_tuple[0], 1), dtype=np.float32)
     elif e2e:
         Y = np.empty(0, dtype=np.float32)
+
     num_sub_imgs = np.empty(0, dtype=np.uint8)
     for f in tqdm(files):
         img = cv2.imread(f)
         yolo_coor = np.loadtxt(f[:-4] + ".txt")
         coor = yolo_to_xy(yolo_coor, img.shape[0:2])
-        img_resc, rf = image_rescale(img, (int(img.shape[0]/down_res_factor), int(img.shape[1]/down_res_factor)))
+        img_resc, rf = image_rescale(img, (int(img.shape[1] / down_res_factor), int(img.shape[0] / down_res_factor)))
+
+        print(str(img.shape))
+        print(str(img_resc.shape))
+        plt.figure()
+        plt.subplot(1, 2, 1)
+        plt.imshow(img)
+        plt.subplot(1, 2, 2)
+        plt.imshow(img_resc)
+        plt.show()
+
         coor_resc = coor_rescale(coor, rf)
 
         # data augmenting each image
@@ -509,9 +536,9 @@ def process_load_data_dir(e2e: bool = False, directory: str = './egg_photos/orig
             n_with_eggs = 0
             for j in range(sub_dmaps.shape[0]):
                 if np.sum(sub_dmaps[j]) > 0:
-                    X = np.append(X, sub_images[j:j+1], axis=0)
+                    X = np.append(X, sub_images[j:j + 1], axis=0)
                     if not e2e:
-                        Y = np.append(Y, sub_dmaps[j:j+1], axis=0)
+                        Y = np.append(Y, sub_dmaps[j:j + 1], axis=0)
                     elif e2e:
                         Y = np.append(Y, np.sum(sub_dmaps[j]) / 100)
                     n_with_eggs += 1
@@ -522,7 +549,7 @@ def process_load_data_dir(e2e: bool = False, directory: str = './egg_photos/orig
 
     X = X.astype('float32')
     Y = Y.astype('float32')
-    X /= 255.   # normalising inputs
+    X /= 255.  # normalising inputs
     return X, Y, num_sub_imgs
 
 
@@ -562,7 +589,7 @@ def sum_density_over_sub_images(Y, n_sub_images):
     n_eggs = np.zeros(n_sub_images.shape[0])
     ind_start = 0
     for i in range(n_sub_images.shape[0]):
-        n_eggs[i] = int(np.round(np.sum(Y[ind_start:ind_start+n_sub_images[i]]) / 100))
+        n_eggs[i] = int(np.round(np.sum(Y[ind_start:ind_start + n_sub_images[i]]) / 100))
         ind_start += n_sub_images[i]
     return n_eggs
 
@@ -587,7 +614,7 @@ def get_file_list(path: str, search_term: str):
     return files
 
 
-def split_rot_image(image, resolution: str = "360p"):
+def split_rot_image(image, resolution: str = "256"):
     """
     Takes in larger image and converts it to multiple sub-image with minimal resolution loss.
 
@@ -610,8 +637,8 @@ def split_rot_image(image, resolution: str = "360p"):
     n_sub_img_hw_hw = n_img_h_by_res_h * n_img_w_by_res_w  # number of sub-images if image is split by h/h & w/w
 
     if n_sub_img_hw_wh > n_sub_img_hw_hw:
-        image = np.swapaxes(image, 0, 1)    # flip image
-        n_sub_img_hw_hw = n_sub_img_hw_wh   # updating number of sub-images to return
+        image = np.swapaxes(image, 0, 1)  # flip image
+        n_sub_img_hw_hw = n_sub_img_hw_wh  # updating number of sub-images to return
 
     if n_sub_img_hw_hw <= 1:  # image cannot be broken down further
         sub_images = np.zeros(shape=(1, res_dim[1], res_dim[0], 3), dtype="uint8")
@@ -623,11 +650,11 @@ def split_rot_image(image, resolution: str = "360p"):
         for i in range(n_img_h_by_res_h):
             for j in range(n_img_w_by_res_w):
                 sub_images[i * n_img_w_by_res_w + j] = img_resc[i * res_dim[1]:(i + 1) * res_dim[1],
-                                                                j * res_dim[0]:(j + 1) * res_dim[0]]
+                                                       j * res_dim[0]:(j + 1) * res_dim[0]]
     return sub_images
 
 
-def split_rot_image_dmap(image, coor, resolution: str = "360p"):
+def split_rot_image_dmap(image, coor, resolution: str = "256"):
     """
     Takes in larger image and converts it to multiple sub-image with minimal resolution loss.
 
@@ -652,12 +679,12 @@ def split_rot_image_dmap(image, coor, resolution: str = "360p"):
     n_sub_img_hw_hw = n_img_h_by_res_h * n_img_w_by_res_w  # number of sub-images if image is split by h/h & w/w
 
     if n_sub_img_hw_wh > n_sub_img_hw_hw:
-        image = np.swapaxes(image, 0, 1)    # flip image
+        image = np.swapaxes(image, 0, 1)  # flip image
         temp = np.zeros_like(coor)
         temp[:, 0] = coor[:, 1]
         temp[:, 1] = coor[:, 0]
-        coor = temp     # flipping coordinate axes
-        n_sub_img_hw_hw = n_sub_img_hw_wh   # updating number of sub-images to return
+        coor = temp  # flipping coordinate axes
+        n_sub_img_hw_hw = n_sub_img_hw_wh  # updating number of sub-images to return
 
     if n_sub_img_hw_hw <= 1:  # image cannot be broken down further
         sub_images = np.zeros(shape=(1, res_dim[1], res_dim[0], 3), dtype="uint8")
@@ -675,13 +702,13 @@ def split_rot_image_dmap(image, coor, resolution: str = "360p"):
         for i in range(n_img_h_by_res_h):
             for j in range(n_img_w_by_res_w):
                 sub_images[i * n_img_w_by_res_w + j] = img_resc[i * res_dim[1]:(i + 1) * res_dim[1],
-                                                                j * res_dim[0]:(j + 1) * res_dim[0]]
+                                                       j * res_dim[0]:(j + 1) * res_dim[0]]
                 sub_dmaps[i * n_img_w_by_res_w + j] = dmap[i * res_dim[1]:(i + 1) * res_dim[1],
-                                                           j * res_dim[0]:(j + 1) * res_dim[0]]
+                                                      j * res_dim[0]:(j + 1) * res_dim[0]]
     return sub_images, sub_dmaps
 
 
-def split_image_dmap(image, coor, resolution: str = "360p"):
+def split_image_dmap(image, coor, resolution: str = "256"):
     """
     Takes in image and its egg coordinates and converts them into multiple sub-images and sub-density-maps.
 
@@ -694,8 +721,8 @@ def split_image_dmap(image, coor, resolution: str = "360p"):
         sub_images (array):     array of shape (# sub-images, (resolution), 3)
         sub_dmaps (array):      density maps of sub-images (# sub-images, (resolution))
     """
-    img_dim = image.shape       # (h, w, 3)
-    res_dim = res[resolution]   # (w, h)
+    img_dim = image.shape  # (h, w, 3)
+    res_dim = res[resolution]  # (w, h)
 
     n_sub_img_h = int(np.floor(img_dim[0] / res_dim[1]))  # times sub-image height can fit in image's height
     n_sub_img_w = int(np.floor(img_dim[1] / res_dim[0]))  # times sub-image width can fit in image's width
@@ -717,9 +744,9 @@ def split_image_dmap(image, coor, resolution: str = "360p"):
         for i in range(n_sub_img_h):
             for j in range(n_sub_img_w):
                 sub_images[i * n_sub_img_w + j] = img_resc[i * res_dim[1]:(i + 1) * res_dim[1],
-                                                           j * res_dim[0]:(j + 1) * res_dim[0]]
+                                                  j * res_dim[0]:(j + 1) * res_dim[0]]
                 sub_dmaps[i * n_sub_img_w + j] = dmap[i * res_dim[1]:(i + 1) * res_dim[1],
-                                                      j * res_dim[0]:(j + 1) * res_dim[0]]
+                                                 j * res_dim[0]:(j + 1) * res_dim[0]]
     return sub_images, sub_dmaps
 
 
@@ -754,7 +781,7 @@ def image_coor_flip_rotate(image, coor):
     images_norm, coors_norm = rotate_image_coor(image, coor)
     # images_lr, coors_lr = rotate_image_coor(image_fliplr, coor_fliplr)
     # images_ud, coors_ud = rotate_image_coor(image_flipud, coor_flipud)
-    
+
     # combining all 12 possible flippings and rotations
     # images = images_norm + images_lr + images_ud
     # coors = coors_norm + coors_lr + coors_ud
@@ -780,7 +807,7 @@ def rotate_image_coor(image, coor):
     #   image   ->  img90  ->   img180  ->  img270
     #   1   2       2   4       4   3       3   1
     #   3   4       1   3       2   1       4   2
-    img90 = np.rot90(image)     # 90 degrees counter-clockwise rotation about (0, 0)
+    img90 = np.rot90(image)  # 90 degrees counter-clockwise rotation about (0, 0)
     img180 = np.rot90(img90)
     img270 = np.rot90(img180)
 
@@ -806,6 +833,6 @@ def coor_rot90(curr_image_shape, prev_coor):
         coor_rotated (array):       rotated coordinates (# eggs, 2)
     """
     coor_rotated = np.zeros_like(prev_coor)
-    coor_rotated[:, 0] = prev_coor[:, 1]                        # new_x = old_y
+    coor_rotated[:, 0] = prev_coor[:, 1]  # new_x = old_y
     coor_rotated[:, 1] = curr_image_shape[0] - prev_coor[:, 0]  # new_y = new_height - old_x
     return coor_rotated

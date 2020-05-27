@@ -18,39 +18,6 @@ from keras.models import Model, load_model
 from keras.layers import *
 from keras.optimizers import *
 from data import *
-# TODO:
-#   - output of nn to grayscale and use blob LoG detection
-#       skimage.feature.blob_log(img, min_sigma=3, max_sigma=7, num_sigma=1, threshold=0.05)
-#   - envelope network with UI
-#   - multiple image inputs for predictions
-
-
-def get_model_memory_usage(batch_size, model):
-    shapes_mem_count = 0
-    internal_model_mem_count = 0
-    for l in model.layers:
-        layer_type = l.__class__.__name__
-        if layer_type == 'Model':
-            internal_model_mem_count += get_model_memory_usage(batch_size, l)
-        single_layer_mem = 1
-        for s in l.output_shape:
-            if s is None:
-                continue
-            single_layer_mem *= s
-        shapes_mem_count += single_layer_mem
-
-    trainable_count = np.sum([K.count_params(p) for p in set(model.trainable_weights)])
-    non_trainable_count = np.sum([K.count_params(p) for p in set(model.non_trainable_weights)])
-
-    number_size = 4.0
-    if K.floatx() == 'float16':
-        number_size = 2.0
-    if K.floatx() == 'float64':
-        number_size = 8.0
-
-    total_memory = number_size * (batch_size * shapes_mem_count + trainable_count + non_trainable_count)
-    gbytes = np.round(total_memory / (1024.0 ** 3), 3) + internal_model_mem_count
-    return gbytes
 
 
 def conv_bn_relu_x2(input_layer, filters):
@@ -109,21 +76,34 @@ def validate_test(model_file: str = 'model_u_net_9.h5'):
     print('-' * 100)
     print('Train and Validation set:')
     X, Y, n_sub_imgs = load_data_npy()
-    Y_pred = model.predict(X, batch_size=3, verbose=1)
-    error_total = 0
-    n_pred = sum_density_over_sub_images(Y_pred, n_sub_imgs)
-    n_actual = sum_density_over_sub_images(Y, n_sub_imgs)
-    for i in range(n_pred.shape[0]):
-        print('Predicted number of eggs:\t' + str(n_pred[i]))
-        print('Actual number of eggs:\t' + str(n_actual[i]))
-        error = n_pred[i] - n_actual[i]
-        print('Error:\t' + str(error) + ' (' + f'{catch_div_by_zero(error, n_actual[i])*100:.2f}' + '%)')
-        error_total += np.abs(error)
+    s = np.random.randint(X.shape[0])
+    s = 0
+    X = X[s:s + 20]
+    Y = Y[s:s + 20]
+    Y_pred = model.predict(X, batch_size=1, verbose=1)
+
+    # n_pred = sum_density_over_sub_images(Y_pred, n_sub_imgs)
+    # n_actual = sum_density_over_sub_images(Y, n_sub_imgs)
+    # for i in range(n_pred.shape[0]):
+    #     print('Predicted number of eggs:\t' + str(n_pred[i]))
+    #     print('Actual number of eggs:\t' + str(n_actual[i]))
+    #     error = n_pred[i] - n_actual[i]
+    #     print('Error:\t' + str(error) + ' (' + f'{catch_div_by_zero(error, n_actual[i])*100:.2f}' + '%)')
+    #     print('-' * 30)
+
+    for i in range(Y_pred.shape[0]):
+        a = np.sum(Y[i]) / 100
+        p = np.sum(Y_pred[i]) / 100
+        print('Predicted number of eggs:\t' + str(p))
+        print('Actual number of eggs:\t' + str(a))
+        error = p - a
+        # print('Error:\t' + str(error) + ' (' + f'{catch_div_by_zero(error, a)*100:.2f}' + '%)')
+        print('Error:\t' + str(error) + ' (' + f'{(0 if a == 0 else error / a) * 100:.2f}' + '%)')
         print('-' * 30)
 
-    for i in range(20):
+    for i in range(5):
         rn = np.random.randint(Y_pred.shape[0])
-        heat_map(X[rn], Y_pred[rn])
+        heat_map(X[rn], Y[rn], Y_pred[rn])
 
 
 def predict_input(model_file: str = 'model_u_net_9.h5'):
@@ -143,12 +123,8 @@ def predict_input(model_file: str = 'model_u_net_9.h5'):
     print('-' * 30)
 
 
-def catch_div_by_zero(n, d):
-    return 0 if d == 0 else n / d
-
-
 class DeepEggCounts(object):
-    def __init__(self, img_rows=360, img_cols=480):
+    def __init__(self, img_rows=256, img_cols=256):
         self.img_rows = img_rows
         self.img_cols = img_cols
 
@@ -157,23 +133,23 @@ class DeepEggCounts(object):
         inputs = Input((self.img_rows, self.img_cols, 3))
         # =========================================================================
         block1 = conv_bn_relu_x2(input_layer=inputs, filters=64)
-        drop1 = Dropout(0.5)(block1)
+        drop1 = Dropout(0.25)(block1)
         pool1 = MaxPooling2D(pool_size=(2, 2))(block1)
         # =========================================================================
         block2 = conv_bn_relu_x2(input_layer=pool1, filters=128)
-        drop2 = Dropout(0.5)(block2)
+        drop2 = Dropout(0.1)(block2)
         pool2 = MaxPooling2D(pool_size=(2, 2))(drop2)
         # =========================================================================
         block3 = conv_bn_relu_x2(input_layer=pool2, filters=256)
-        drop3 = Dropout(0.5)(block3)
+        drop3 = Dropout(0.1)(block3)
         pool3 = MaxPooling2D(pool_size=(2, 2))(drop3)
         # =========================================================================
         block4 = conv_bn_relu_x2(input_layer=pool3, filters=512)
-        drop4 = Dropout(0.5)(block4)
+        drop4 = Dropout(0.1)(block4)
         pool4 = MaxPooling2D(pool_size=(2, 2))(drop4)
         # =========================================================================
         block5 = conv_bn_relu_x2(input_layer=pool4, filters=1024)
-        drop5 = Dropout(0.5)(block5)
+        drop5 = Dropout(0.1)(block5)
         up5 = up_conv_bn_relu_cat(input_layer=drop5, concat_layer=drop4, filters=512)
         # =========================================================================
         block6 = conv_bn_relu_x2(input_layer=up5, filters=512)
@@ -191,7 +167,7 @@ class DeepEggCounts(object):
                                      kernel_initializer='he_normal', use_bias=False)(block9)
         # =========================================================================
         model = Model(inputs=inputs, outputs=density_pred)
-        optim = Adam()
+        optim = Adam(lr=1e-4)
         model.compile(optimizer=optim, loss='mean_squared_error', metrics=['acc'])
         if pre_trained_weights:
             model.load_weights(pre_trained_weights)
@@ -204,27 +180,27 @@ class DeepEggCounts(object):
         drop_in = Dropout(0.1)(inputs)
         # =========================================================================
         block1 = conv_bn_relu_x2(input_layer=drop_in, filters=64)
-        drop1 = Dropout(0.5)(block1)
+        drop1 = Dropout(0.3)(block1)
         pool1 = MaxPooling2D(pool_size=(2, 2))(drop1)
         # =========================================================================
         block2 = conv_bn_relu_x2(input_layer=pool1, filters=128)
-        drop2 = Dropout(0.5)(block2)
+        drop2 = Dropout(0.3)(block2)
         pool2 = MaxPooling2D(pool_size=(2, 2))(drop2)
         # =========================================================================
         block3 = conv_bn_relu_x2(input_layer=pool2, filters=256)
-        drop3 = Dropout(0.5)(block3)
+        drop3 = Dropout(0.2)(block3)
         pool3 = MaxPooling2D(pool_size=(2, 2))(drop3)
         # =========================================================================
         block4 = conv_bn_relu_x2(input_layer=pool3, filters=512)
-        drop4 = Dropout(0.5)(block4)
+        drop4 = Dropout(0.2)(block4)
         up4 = up_conv_bn_relu_cat(input_layer=drop4, concat_layer=drop3, filters=256)
         # =========================================================================
         block5 = conv_bn_relu_x2(input_layer=up4, filters=256)
-        drop5 = Dropout(0.5)(block5)
+        drop5 = Dropout(0.1)(block5)
         up5 = up_conv_bn_relu_cat(input_layer=drop5, concat_layer=drop2, filters=128)
         # =========================================================================
         block6 = conv_bn_relu_x2(input_layer=up5, filters=128)
-        drop6 = Dropout(0.5)(block6)
+        drop6 = Dropout(0.1)(block6)
         up6 = up_conv_bn_relu_cat(input_layer=drop6, concat_layer=drop1, filters=64)
         # =========================================================================
         block7 = conv_bn_relu_x2(input_layer=up6, filters=64)
@@ -233,7 +209,7 @@ class DeepEggCounts(object):
                                      kernel_initializer='he_normal', use_bias=False)(block7)
         # =========================================================================
         model = Model(inputs=inputs, outputs=density_pred)
-        optim = Adam()
+        optim = SGD(lr=1e-4, momentum=0.9)
         model.compile(optimizer=optim, loss='mean_squared_error', metrics=['acc'])
         if pre_trained_weights:
             model.load_weights(pre_trained_weights)
@@ -277,8 +253,10 @@ class DeepEggCounts(object):
             X, Y, n_sub_imgs = load_data_npy(e2e=True)
         else:
             X, Y, n_sub_imgs = load_data_npy()
-        X = X[:20]
-        Y = Y[:20]
+        s = np.random.randint(X.shape[0])
+        s = 0
+        X = X[s:s+20]
+        Y = Y[s:s+20]
 
         print("Loading data done")
 
@@ -297,22 +275,19 @@ class DeepEggCounts(object):
             print("Built U-net:\t" + model_file)
 
         # model.summary()
-        # get_model_memory_usage(1, model)
 
         # Callbacks
         def scheduler(epoch):
             return 10e-4 * np.power(0.975, epoch)     # 2.5% LR drop per epoch
         model_learning_rate = LearningRateScheduler(scheduler, verbose=1)
         model_checkpoint = ModelCheckpoint(model_file, monitor='loss', verbose=1, save_best_only=True)
-        # log_dir = "logs/fit/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-        # tensorboard_callback = TensorBoard(log_dir=log_dir, histogram_freq=1)
 
         # batch_size limited to 1 due to my own GPU's memory limitations
         print('Fitting model...')
-        history = model.fit(X, Y, batch_size=1, validation_split=0.1, epochs=50, verbose=1, shuffle=True,
-                            initial_epoch=0,
+        history = model.fit(X, Y, batch_size=1, validation_split=0.1, shuffle=True,
+                            initial_epoch=0, epochs=50,
                             # steps_per_epoch=500, validation_steps=100,
-                            callbacks=[model_checkpoint])
+                            verbose=1, callbacks=[model_checkpoint])
 
         # plot loss during training
         plt.title('Loss / Mean Squared Error')
@@ -327,6 +302,6 @@ class DeepEggCounts(object):
 if __name__ == '__main__':
     eggstimator = DeepEggCounts()
     model_file = 'model_u_net_9.h5'
-    # eggstimator.train(model_file)
-    validate_test(model_file)
+    eggstimator.train(model_file)
+    # validate_test(model_file)
     # predict_input(model_file)
