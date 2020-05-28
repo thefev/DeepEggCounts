@@ -247,6 +247,19 @@ class DeepEggCounts(object):
             print('weights loaded')
         return model
 
+    def build_heat_summary(self):
+        inputs = Input((self.img_rows, self.img_cols, 1))
+        block1 = conv_bn_relu_x2(input_layer=inputs, filters=1)
+        pool1 = MaxPooling2D(pool_size=(2, 2))(block1)
+        flat1 = Flatten()(pool1)
+        dense1 = Dense(128, activation='relu')(flat1)
+        output = Dense(1, activation='relu')(dense1)
+        model = Model(inputs=inputs, outputs=output)
+        optim = Adam(lr=1e-4)
+        model.compile(optimizer=optim, loss='mse', metrics=['acc'])
+        return model
+
+
     def train(self, model_file: str = ''):
         print("Loading data...")
         if 'e2e' in model_file:
