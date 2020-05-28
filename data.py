@@ -31,6 +31,60 @@ cropped = False
 x_start, y_start, x_end, y_end = 0, 0, 0, 0
 
 
+def filter_image(img):
+    plt.subplot(3, 3, 1)
+    plt.imshow(img)
+    plt.title('Input image')
+
+    img_gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    img_gray_BGR = cv2.cvtColor(img_gray, cv2.COLOR_GRAY2BGR)
+    plt.subplot(3, 3, 2)
+    plt.imshow(img_gray_BGR)
+    plt.title('Grayscale')
+
+    img_blue = img.copy()
+    img_blue[:, :, 0] = 0
+    img_blue[:, :, 1] = 0
+    plt.subplot(3, 3, 4)
+    plt.imshow(img_blue)
+    plt.title('Blue')
+
+    img_green = img.copy()
+    img_green[:, :, 0] = 0
+    img_green[:, :, 2] = 0
+    plt.subplot(3, 3, 5)
+    plt.imshow(img_green)
+    plt.title('Green')
+
+    img_red = img.copy()
+    img_red[:, :, 1] = 0
+    img_red[:, :, 2] = 0
+    plt.subplot(3, 3, 6)
+    plt.imshow(img_red)
+    plt.title('Red')
+
+    img_bg = img.copy()
+    img_bg[:, :, 0] = 0
+    plt.subplot(3, 3, 7)
+    plt.imshow(img_bg)
+    plt.title('Blue-Green')
+
+    img_br = img.copy()
+    img_br[:, :, 1] = 0
+    plt.subplot(3, 3, 8)
+    plt.imshow(img_br)
+    plt.title('Blue-Red')
+
+    img_gr = img.copy()
+    img_gr[:, :, 2] = 0
+    plt.subplot(3, 3, 9)
+    plt.imshow(img_gr)
+    plt.title('Green-Red')
+
+    plt.show()
+    return None
+
+
 def mouse_crop(event, x, y, flags, param):
     """
     Grabs mouse coordinates from image display frame at commencement of cropping and end. Feeds to global coordinates
@@ -443,7 +497,7 @@ def heat_map(x_img, y_img, y_pred=None):
     plt.title('Input Image')
     plt.subplot(1, plots, 2)
     plt.imshow(y_img[:, :, 0], cmap='plasma')
-    plt.title('Expected Output')
+    plt.title('Target Output')
     if y_pred is not None:
         plt.subplot(1, plots, 3)
         plt.imshow(y_pred[:, :, 0], cmap='plasma')
@@ -515,21 +569,11 @@ def process_load_data_dir(e2e: bool = False, directory: str = './egg_photos/orig
         yolo_coor = np.loadtxt(f[:-4] + ".txt")
         coor = yolo_to_xy(yolo_coor, img.shape[0:2])
         img_resc, rf = image_rescale(img, (int(img.shape[1] / down_res_factor), int(img.shape[0] / down_res_factor)))
-
-        print(str(img.shape))
-        print(str(img_resc.shape))
-        plt.figure()
-        plt.subplot(1, 2, 1)
-        plt.imshow(img)
-        plt.subplot(1, 2, 2)
-        plt.imshow(img_resc)
-        plt.show()
-
         coor_resc = coor_rescale(coor, rf)
 
         # data augmenting each image
         images, coors = image_coor_flip_rotate(img_resc, coor_resc)
-        for i in range(images.__len__()):
+        for i in range(len(images)):
             sub_images, sub_dmaps = split_image_dmap(images[i], coors[i], resolution)
 
             # loading only sub-images with eggs
@@ -766,8 +810,8 @@ def image_coor_flip_rotate(image, coor):
     Note:   images needed to be a tuple as its shape changes due to rotation. coors didn't need to be tuple and could
         have been implemented as an array, but I wanted to keep data types consistent with images.
     """
-    assert image.shape.__len__() == 3, "Expected image to have length of 3 (h, w, 3), got " + str(image.shape.__len__())
-    assert coor.shape.__len__() == 2, "Expected image to have length of 2 (# eggs, 2), got " + str(coor.shape.__len__())
+    assert len(image.shape) == 3, "Expected image to have length of 3 (h, w, 3), got " + str(len(image.shape))
+    assert len(coor.shape) == 2, "Expected image to have length of 2 (# eggs, 2), got " + str(len(coor.shape))
 
     # flipping images and their corresponding coordinates
     # image_fliplr = np.fliplr(image)

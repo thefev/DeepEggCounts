@@ -76,8 +76,8 @@ def validate_test(model_file: str = 'model_u_net_9.h5'):
     print('-' * 100)
     print('Train and Validation set:')
     X, Y, n_sub_imgs = load_data_npy()
-    s = np.random.randint(X.shape[0])
-    s = 0
+    # s = np.random.randint(X.shape[0])
+    s = 1780
     X = X[s:s + 20]
     Y = Y[s:s + 20]
     Y_pred = model.predict(X, batch_size=1, verbose=1)
@@ -253,10 +253,11 @@ class DeepEggCounts(object):
             X, Y, n_sub_imgs = load_data_npy(e2e=True)
         else:
             X, Y, n_sub_imgs = load_data_npy()
-        s = np.random.randint(X.shape[0])
-        s = 0
-        X = X[s:s+20]
-        Y = Y[s:s+20]
+        # s = np.random.randint(X.shape[0])
+        # s = 1780
+        # n = 50
+        # X = X[s:s+n]
+        # Y = Y[s:s+n]
 
         print("Loading data done")
 
@@ -285,7 +286,7 @@ class DeepEggCounts(object):
         # batch_size limited to 1 due to my own GPU's memory limitations
         print('Fitting model...')
         history = model.fit(X, Y, batch_size=1, validation_split=0.1, shuffle=True,
-                            initial_epoch=0, epochs=50,
+                            initial_epoch=0, epochs=200,
                             # steps_per_epoch=500, validation_steps=100,
                             verbose=1, callbacks=[model_checkpoint])
 

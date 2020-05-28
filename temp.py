@@ -12,11 +12,12 @@ import data
 # dmap = data.generate_density_map(img, coor)
 # data.heat_map(img, dmap)
 
-X, Y, nsi = data.process_load_data_dir()
+# X, Y, nsi = data.process_load_data_dir()
 # data.save_data_npy(X, Y, nsi)
 
-# X, Y, nsi = data.load_data_npy()
-# data.sample_xy(5, X, Y)
+X, Y, nsi = data.load_data_npy()
+# data.sample_xy(20, X, Y)
+data.filter_image(X[1780])
 
 # X, Y, nsi = data.process_load_data_dir(e2e=True)
 # data.save_data_npy(X, Y, nsi, e2e=True)
