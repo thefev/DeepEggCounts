@@ -1,1 +1,1 @@
-DeepNet for counting mosquito eggs.
+Deep Artificial Neural Network for image segmentation of mosquito eggs of egg paper. DeepEggCounts counts the number of eggs using a U-net achitecture with various tools built-in for pre-processing images.
